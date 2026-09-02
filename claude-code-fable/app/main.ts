@@ -15,6 +15,7 @@ import { createGamepadPoller } from "./adapters/input/gamepad";
 import { attachTouch, createDpad } from "./adapters/input/touch";
 import { type FxLayer, createPhaserFx } from "./adapters/render/phaser/phaser-fx";
 import { createAudio } from "./adapters/audio/synth";
+import { createHighScore } from "./adapters/storage/highscore";
 
 const TICK_MS = 120;
 
@@ -50,6 +51,7 @@ try {
   storage = null;
 }
 const audio = createAudio({ storage });
+const highscore = createHighScore(storage);
 const muteBtn = document.getElementById("mute") as HTMLButtonElement;
 function reflectMute(): void {
   muteBtn.setAttribute("aria-pressed", audio.muted() ? "true" : "false");
@@ -131,10 +133,12 @@ function dispatchEffects(): void {
       fx.onEffect(kind, sink.x[slot]!, sink.y[slot]!, sink.arg[slot]!, state);
     }
     audio.onEffect(kind, sink.arg[slot]!, state.combo);
+    if (kind === EFFECT_DIED) highscore.submit(state.score);
   }
 }
 
 const frameTimes = new Float32Array(600);
+const frameWork = new Float32Array(600);
 let frameCursor = 0;
 let frameCount = 0;
 
@@ -146,16 +150,18 @@ const loop = createLoop({
     dispatchEffects();
   },
   onFrame(alpha, frameMs) {
+    const t0 = performance.now();
     governor.sample(frameMs);
-    frameTimes[frameCursor] = frameMs;
-    frameCursor = (frameCursor + 1) % frameTimes.length;
-    frameCount++;
     syncTier();
     gamepad.poll();
     drainIntents();
     fb.draw(state, alpha, BASE_PALETTE, { fruit, grid: true });
     fb.composite(display, "#000000");
     if (fx) fx.render(state, alpha, BASE_PALETTE, fruit);
+    frameTimes[frameCursor] = frameMs;
+    frameWork[frameCursor] = performance.now() - t0;
+    frameCursor = (frameCursor + 1) % frameTimes.length;
+    frameCount++;
   }
 });
 loop.start();
@@ -265,6 +271,9 @@ const debug = {
   /** Replays an input log on a fresh engine and returns the hash. */
   replay: (logText: string, ticks: number, seed = "snake-0001") => replay(seed, parseLog(logText), ticks),
   frameTimes: () => Array.from(frameTimes.subarray(0, Math.min(frameCount, frameTimes.length))),
+  /** Per-frame CPU work of the loop body (tick + draw + composite), ms. */
+  frameWork: () => Array.from(frameWork.subarray(0, Math.min(frameCount, frameWork.length))),
+  highscore: () => highscore.get(),
   frameCount: () => frameCount,
   palette: () => ({ ...BASE_PALETTE }),
   build: typeof __SNAKE_BUILD__ === "string" ? __SNAKE_BUILD__ : "dev"

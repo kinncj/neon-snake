@@ -33,6 +33,8 @@ export interface SnakeDebug {
   dpadVisible(): boolean;
   replay(logText: string, ticks: number, seed?: string): string;
   frameTimes(): number[];
+  frameWork(): number[];
+  highscore(): number;
   frameCount(): number;
   palette(): Record<string, string>;
   build: string;

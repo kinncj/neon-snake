@@ -93,6 +93,10 @@ export async function createPhaserFx(canvas: HTMLCanvasElement, initialFit: Fit,
   let frames = 0;
   let contextLost = false;
   let sleeping = false;
+  // GL draw-call accounting: calls are counted on the raw context and the
+  // per-frame total is latched at the start of every scene update.
+  let drawCalls = 0;
+  let drawCallsLastFrame = 0;
 
   // FX state.
   const particles: Particles = createParticles();
@@ -183,6 +187,8 @@ export async function createPhaserFx(canvas: HTMLCanvasElement, initialFit: Fit,
 
     override update(time: number): void {
       frames++;
+      drawCallsLastFrame = drawCalls;
+      drawCalls = 0;
       const s = state;
       const p = palette;
       if (!s || !p) return;
@@ -377,6 +383,23 @@ export async function createPhaserFx(canvas: HTMLCanvasElement, initialFit: Fit,
     scene: FxScene
   });
 
+  // Count real GPU draw batches: every drawArrays/drawElements on the context.
+  {
+    const gl = (game.renderer as unknown as { gl?: WebGL2RenderingContext }).gl;
+    if (gl) {
+      const de = gl.drawElements.bind(gl);
+      const da = gl.drawArrays.bind(gl);
+      gl.drawElements = ((mode: number, count: number, type: number, offset: number) => {
+        drawCalls++;
+        de(mode, count, type, offset);
+      }) as typeof gl.drawElements;
+      gl.drawArrays = ((mode: number, first: number, count: number) => {
+        drawCalls++;
+        da(mode, first, count);
+      }) as typeof gl.drawArrays;
+    }
+  }
+
   const cssSize = (): void => {
     canvas.style.width = "100vw";
     canvas.style.height = "100vh";
@@ -480,10 +503,7 @@ export async function createPhaserFx(canvas: HTMLCanvasElement, initialFit: Fit,
         burst(particles, cx, cy, { count: 60, speed: 150 * sc, life: 800, size: 1.8, colour: hex(palette.accent), gravity: 40 * sc });
       }
     },
-    drawCount() {
-      const r = game.renderer as unknown as { drawCount?: number };
-      return typeof r.drawCount === "number" ? r.drawCount : 0;
-    },
+    drawCount: () => drawCallsLastFrame,
     frames: () => frames,
     alive: () => frames > 0 && !contextLost && !sleeping,
     sample(x, y) {
