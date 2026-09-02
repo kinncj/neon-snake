@@ -32,4 +32,4 @@
 | P4.2 | 2026-09-02T21:45:17Z | 2026-09-02T21:48:50Z | 3m 33s |
 | P4.3 | 2026-09-02T21:48:50Z | 2026-09-02T21:55:41Z | 6m 51s |
 
-Sum of step durations: **114m 48s** (00-project brackets the whole build).
+Sum of step durations: **101m 39s** (00-project brackets the whole build; P4 brackets P4.1–P4.3).

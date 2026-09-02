@@ -33,8 +33,9 @@ for (const step of order) {
     continue;
   }
   const d = (Date.parse(b) - Date.parse(a)) / 1000;
-  if (step !== "00-project") total += d;
+  // Bracket steps (00-project, P4) contain other steps; keep them out of the sum.
+  if (step !== "00-project" && step !== "P4") total += d;
   lines.push(`| ${step} | ${a} | ${b} | ${human(d)} |`);
 }
-lines.push("", `Sum of step durations: **${human(total)}** (00-project brackets the whole build).`);
+lines.push("", `Sum of step durations: **${human(total)}** (00-project brackets the whole build; P4 brackets P4.1–P4.3).`);
 process.stdout.write(lines.join("\n") + "\n");
