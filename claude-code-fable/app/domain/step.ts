@@ -1,11 +1,13 @@
 import {
-  type Dir, type EffectSink, type State,
+  type Dir, type EffectSink, type Intent, type State,
   GRID_W, GRID_H, CELL_COUNT, MAX_PENDING, START_LEN,
   DIR_DX, DIR_DY, DIR_RIGHT,
-  EFFECT_TURNED, EFFECT_ATE, EFFECT_GREW, EFFECT_SPAWNED,
-  packCell, cellX, cellY, emit
+  EFFECT_TURNED, EFFECT_ATE, EFFECT_GREW, EFFECT_SPAWNED, EFFECT_DIED,
+  CAUSE_WALL, CAUSE_SELF,
+  packCell, cellX, cellY, emit, intentKind
 } from "./types";
 import { seedFrom, next, rangeOf } from "./rng";
+import { enqueue } from "./intents";
 
 /** Points per food before any level or combo scaling. */
 export const FOOD_VALUE = 10;
@@ -54,6 +56,18 @@ export function reset(s: State): void {
   s.combo = 1;
   s.level = 1;
   spawnFood(s);
+}
+
+/**
+ * Applies a player intent. Turns and pause go through the intent buffer;
+ * restart re-initialises in place with the same seed from any phase.
+ */
+export function apply(s: State, intent: Intent): boolean {
+  if (intentKind(intent) === "restart") {
+    reset(s);
+    return true;
+  }
+  return enqueue(s, intent);
 }
 
 function occupied(s: State, cell: number): boolean {
@@ -109,14 +123,36 @@ export function step(s: State, sink: EffectSink): State {
   }
 
   const head = s.body[0]!;
-  const nx = cellX(head) + DIR_DX[s.dir]!;
-  const ny = cellY(head) + DIR_DY[s.dir]!;
+  const hx = cellX(head);
+  const hy = cellY(head);
+  const nx = hx + DIR_DX[s.dir]!;
+  const ny = hy + DIR_DY[s.dir]!;
+
+  // Walls are solid: the head stays on its last cell and the run ends.
+  if (nx < 0 || ny < 0 || nx >= GRID_W || ny >= GRID_H) {
+    s.phase = "gameover";
+    emit(sink, EFFECT_DIED, hx, hy, CAUSE_WALL);
+    return s;
+  }
+
   const eating = nx === s.foodX && ny === s.foodY;
+  const target = packCell(nx, ny);
+
+  // Self collision: the tail cell vacates this tick unless we grow, so it is
+  // only an obstacle when eating.
+  const lastIdx = eating ? s.bodyLen : s.bodyLen - 1;
+  for (let i = 0; i < lastIdx; i++) {
+    if (s.body[i] === target) {
+      s.phase = "gameover";
+      emit(sink, EFFECT_DIED, hx, hy, CAUSE_SELF);
+      return s;
+    }
+  }
 
   // Growth keeps the old tail in place: shift one more cell, then extend.
   const shiftLen = eating ? s.bodyLen : s.bodyLen - 1;
   s.body.copyWithin(1, 0, shiftLen);
-  s.body[0] = packCell(nx, ny);
+  s.body[0] = target;
 
   if (eating) {
     s.bodyLen++;
