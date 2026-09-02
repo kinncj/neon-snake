@@ -42,20 +42,18 @@ make ci          # lint, typecheck, unit, build, e2e (Playwright)
 
 ## GitHub Pages deploy
 
-The live builds are deployed from the **`gh-pages`** branch, which holds the
-production `dist/` of each package plus a landing page:
+The live site is built and deployed by **GitHub Actions**
+(`.github/workflows/deploy-pages.yml`): every push to `main` (or a manual
+"Run workflow") builds both packages, composes the site — the
+[`site/index.html`](site/index.html) landing page plus each package's
+`dist/` — and publishes it. The `gh-pages` branch is managed by the workflow;
+don't push to it by hand.
 
-```
-gh-pages/
-  index.html          # landing page (this is kinncj.github.io/neon-snake/)
-  opencode/           # built game  -> /neon-snake/opencode/
-  pi-agent/           # built game  -> /neon-snake/pi-agent/
-```
+One-time repo setting: **Settings → Pages → Build and deployment → Source:
+GitHub Actions**.
 
-To redeploy after a change:
-
-```bash
-SNAKE_BUILD="pages-$(date +%Y%m%d)" npm run build   # in opencode/ and pi-agent/
-# then copy each dist/ into the gh-pages worktree at opencode/ and pi-agent/
-# and push gh-pages (Pages source: gh-pages branch, / root)
-```
+| URL | Serves |
+|---|---|
+| https://kinncj.github.io/neon-snake/ | landing page |
+| https://kinncj.github.io/neon-snake/opencode/ | the opencode build |
+| https://kinncj.github.io/neon-snake/pi-agent/ | the pi-agent build |

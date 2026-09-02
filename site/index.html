@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NEON SNAKE — two builds</title>
+  <meta name="description" content="Two independent builds of the same neon snake spec, generated with Qwen3.8 27B (NVFP4) on an RTX PRO 6000." />
+  <style>
+    :root {
+      --bg: #030409;
+      --panel: #0a0d1a;
+      --line: #1c2340;
+      --cyan: #00e5ff;
+      --magenta: #ff2e88;
+      --violet: #9d6bff;
+      --text: #cdd6f4;
+      --dim: #7f8bb0;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-monospace, "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 20px;
+      background-image:
+        radial-gradient(55% 40% at 50% 115%, rgba(0, 229, 255, 0.08), transparent 70%),
+        radial-gradient(45% 35% at 15% -10%, rgba(255, 46, 136, 0.07), transparent 70%);
+    }
+    .wrap { width: 100%; max-width: 720px; text-align: center; }
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--dim);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 5px 14px;
+      margin-bottom: 22px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(34px, 7vw, 56px);
+      letter-spacing: 0.08em;
+      color: #eaf6ff;
+      text-shadow:
+        0 0 12px rgba(0, 229, 255, 0.65),
+        0 0 42px rgba(0, 229, 255, 0.30);
+    }
+    h1 .m { color: #ffe9f3; text-shadow: 0 0 12px rgba(255, 46, 136, 0.65), 0 0 42px rgba(255, 46, 136, 0.30); }
+    .sub { margin: 0 0 40px; color: var(--dim); font-size: 14px; line-height: 1.7; }
+    .sub b { color: var(--text); font-weight: 600; }
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      text-align: left;
+    }
+    .card {
+      display: block;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 20px 22px;
+      text-decoration: none;
+      color: var(--text);
+      transition: border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+    }
+    .card:hover { transform: translateY(-2px); }
+    .card.opencode:hover { border-color: var(--cyan); box-shadow: 0 0 24px rgba(0, 229, 255, 0.18); }
+    .card.pi-agent:hover { border-color: var(--magenta); box-shadow: 0 0 24px rgba(255, 46, 136, 0.18); }
+    .card .name { font-size: 17px; letter-spacing: 0.04em; }
+    .card.opencode .name { color: var(--cyan); }
+    .card.pi-agent .name { color: var(--magenta); }
+    .card .desc { margin-top: 8px; font-size: 12.5px; line-height: 1.6; color: var(--dim); }
+    .card .play {
+      margin-top: 14px;
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .card.opencode .play { color: var(--cyan); }
+    .card.pi-agent .play { color: var(--magenta); }
+    footer { margin-top: 44px; font-size: 11.5px; color: var(--dim); line-height: 1.8; }
+    footer a { color: var(--violet); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    @media (max-width: 560px) { .cards { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <span class="tag">kinncj / neon-snake</span>
+    <h1>NEON <span class="m">SNAKE</span></h1>
+    <p class="sub">
+      Two independent builds of the same spec, generated end-to-end with<br />
+      <b>Qwen3.8 27B (NVFP4)</b> on an <b>NVIDIA RTX PRO 6000</b> — pick a build and play.
+    </p>
+    <div class="cards">
+      <a class="card opencode" href="opencode/">
+        <div class="name">▸ opencode</div>
+        <div class="desc">
+          Built by the <b>opencode</b> agent. Phaser 4 FX, Tone.js lo-fi, CRT-TV
+          shell, 5 levels, en/ja/es.
+        </div>
+        <div class="play">play →</div>
+      </a>
+      <a class="card pi-agent" href="pi-agent/">
+        <div class="name">▸ pi-agent</div>
+        <div class="desc">
+          Built by the <b>pi-agent</b> agent. Same spec, independent
+          implementation — same neon, same lo-fi.
+        </div>
+        <div class="play">play →</div>
+      </a>
+    </div>
+    <footer>
+      Source &amp; build docs: <a href="https://github.com/kinncj/neon-snake">github.com/kinncj/neon-snake</a><br />
+      Each build ships its own <code>docs/</code> — ADRs, build reports, playtest screenshots.
+    </footer>
+  </div>
+</body>
+</html>

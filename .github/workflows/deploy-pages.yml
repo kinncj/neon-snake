@@ -1,0 +1,72 @@
+# Builds both snake packages and deploys the composed site (landing page +
+# opencode/ + pi-agent/) to GitHub Pages.
+#
+# Pages source must be set to "GitHub Actions" (Settings → Pages →
+# Build and deployment → Source). The gh-pages branch is managed by this
+# workflow — do not push to it by hand.
+#
+# Site layout when live:
+#   https://kinncj.github.io/neon-snake/           (site/index.html)
+#   https://kinncj.github.io/neon-snake/opencode/  (opencode/dist)
+#   https://kinncj.github.io/neon-snake/pi-agent/  (pi-agent/dist)
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build opencode
+        working-directory: opencode
+        run: |
+          npm ci
+          SNAKE_BUILD="pages-${GITHUB_SHA}" npm run build
+
+      - name: Build pi-agent
+        working-directory: pi-agent
+        run: |
+          npm ci
+          SNAKE_BUILD="pages-${GITHUB_SHA}" npm run build
+
+      # Both builds use a relative base (vite.config.ts), so the dist/
+      # folders run unchanged from any sub-path of the site.
+      - name: Assemble site
+        run: |
+          mkdir -p site-build/opencode site-build/pi-agent
+          cp site/index.html site-build/
+          cp -r opencode/dist/. site-build/opencode/
+          cp -r pi-agent/dist/. site-build/pi-agent/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site-build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
