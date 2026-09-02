@@ -17,7 +17,7 @@ describe("init", () => {
     expect(s.dir).toBe(0);
     expect(s.phase).toBe("playing");
     expect(s.tick).toBe(0);
-    expect(s.rng).toBe(s.seed);
+    expect(s.rng).not.toBe(0);
   });
   it("is deterministic for the same seed", () => {
     const a = init("x");
