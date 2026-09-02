@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!--
+  CRT-TV shell sprite. Painted by #tv-frame at 100% 100% of the viewport.
+  A mask punches the screen (glass) area out of the opaque plastic so the game
+  shows through the glass. The screen rect is deliberately wide so the centred,
+  aspect-preserving game field AND the corner HUD (top-left) / settings gear
+  (top-right) stay visible through the glass, while a thin dark plastic bezel
+  (matching the #02030a field background) frames the edges and the bottom
+  control panel carries the brand plate, speaker vents and knobs.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" preserveAspectRatio="none">
+  <defs>
+    <linearGradient id="plastic" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a3d4d"/>
+      <stop offset="0.5" stop-color="#26283a"/>
+      <stop offset="1" stop-color="#14151f"/>
+    </linearGradient>
+    <linearGradient id="bevel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a4d63"/>
+      <stop offset="1" stop-color="#1a1b28"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="0.4" stop-color="#ffffff" stop-opacity="0.02"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.14"/>
+    </linearGradient>
+    <radialGradient id="knob" cx="0.4" cy="0.35" r="0.8">
+      <stop offset="0" stop-color="#6b6f8c"/>
+      <stop offset="1" stop-color="#101119"/>
+    </radialGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0c0d18"/>
+      <stop offset="1" stop-color="#1c1e2e"/>
+    </linearGradient>
+    <!-- punch the screen out of the opaque plastic (black = transparent) -->
+    <mask id="screen-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="700">
+      <rect x="0" y="0" width="1000" height="700" fill="#fff"/>
+      <rect x="62" y="28" width="886" height="576" rx="12" ry="12" fill="#000"/>
+    </mask>
+  </defs>
+
+  <g mask="url(#screen-mask)">
+    <!-- plastic body (rounded) -->
+    <rect x="4" y="2" width="992" height="696" rx="30" ry="30" fill="url(#plastic)"/>
+    <rect x="4" y="2" width="992" height="696" rx="30" ry="30" fill="none" stroke="#4a4d63" stroke-width="2"/>
+    <!-- recessed glass well (bevel ring around the screen) -->
+    <rect x="52" y="18" width="896" height="596" rx="16" ry="16" fill="url(#bevel)"/>
+
+    <!-- bottom control panel -->
+    <rect x="52" y="622" width="896" height="62" rx="10" ry="10" fill="url(#plate)"/>
+    <!-- brand plate -->
+    <rect x="120" y="640" width="340" height="28" rx="6" ry="6" fill="#070810" stroke="#3a3d55" stroke-width="1.5"/>
+    <text x="290" y="660" text-anchor="middle" font-family="'Courier New', monospace" font-weight="bold" font-size="18" letter-spacing="4" fill="#00e5ff">NEON-SNAKE</text>
+    <!-- speaker vents -->
+    <g stroke="#0c0d16" stroke-width="4" stroke-linecap="round">
+      <line x1="540" y1="638" x2="540" y2="670"/>
+      <line x1="560" y1="638" x2="560" y2="670"/>
+      <line x1="580" y1="638" x2="580" y2="670"/>
+      <line x1="600" y1="638" x2="600" y2="670"/>
+      <line x1="620" y1="638" x2="620" y2="670"/>
+      <line x1="640" y1="638" x2="640" y2="670"/>
+    </g>
+    <!-- knobs (volume / channel) -->
+    <circle cx="780" cy="653" r="21" fill="url(#knob)" stroke="#0c0d16" stroke-width="2"/>
+    <circle cx="780" cy="653" r="6" fill="#070810"/>
+    <line x1="780" y1="653" x2="780" y2="636" stroke="#8a8fae" stroke-width="2"/>
+    <circle cx="852" cy="653" r="21" fill="url(#knob)" stroke="#0c0d16" stroke-width="2"/>
+    <circle cx="852" cy="653" r="6" fill="#070810"/>
+    <line x1="852" y1="653" x2="865" y2="645" stroke="#8a8fae" stroke-width="2"/>
+    <!-- power LED -->
+    <circle cx="96" cy="653" r="7" fill="#22ffb0"/>
+    <circle cx="96" cy="653" r="7" fill="none" stroke="#22ffb0" stroke-width="3" opacity="0.4"/>
+  </g>
+
+  <!-- glass reflection over the screen (subtle; the game shows through it) -->
+  <rect x="62" y="28" width="886" height="576" rx="12" ry="12" fill="url(#glass)"/>
+  <path d="M84 28 L280 28 L140 604 L62 604 Z" fill="#ffffff" opacity="0.04"/>
+</svg>

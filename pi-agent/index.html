@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#05060f" />
+    <meta name="description" content="Neo-retro neon snake with screen-space effects and chiptune audio." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2305060f'/%3E%3Cpath d='M3 11h3v-3h4V5h3' stroke='%2300e5ff' stroke-width='2.5' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='13' cy='5' r='1.6' fill='%23ff2e88'/%3E%3C/svg%3E"
+    />
+    <title>NEON SNAKE</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background: #030409;
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+      /* Room ambience behind the TV: a faint neon pool on the "table". */
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background:
+          radial-gradient(60% 45% at 50% 108%, rgba(0, 229, 255, 0.07), transparent 70%),
+          radial-gradient(40% 35% at 20% -10%, rgba(124, 77, 255, 0.08), transparent 70%);
+        pointer-events: none;
+      }
+
+      /* ---- CRT TV shell (purely cosmetic: the canvas stays full-viewport) ----
+         A visible nostalgic bezel drawn *over* the canvas edges, like the
+         curved glass + plastic body of a real CRT. The game canvas keeps 100%
+         of the viewport so all composite geometry contracts hold; the frame
+         is a pointer-events:none overlay on top. */
+      #tv {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 12;
+      }
+      /* The plastic body is a real sprite (public/crt-tv.svg): a rounded CRT
+         with a transparent screen hole, so the game shows through the centre
+         and the bezel frames the edges. Stretched to fill the viewport. */
+      #tv-frame {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 40;
+        background: url(/crt-tv.svg) center / 100% 100% no-repeat;
+      }
+      #tv-led {
+        position: fixed;
+        right: 34px;
+        bottom: 20px;
+        z-index: 41;
+        pointer-events: none;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #22ffb0;
+        box-shadow: 0 0 8px #22ffb0, 0 0 20px rgba(34, 255, 176, 0.6);
+        animation: led-breathe 3s ease-in-out infinite;
+      }
+      @keyframes led-breathe {
+        0%, 100% { opacity: 0.85; }
+        50% { opacity: 0.55; }
+      }
+
+      /* ---- The screen itself (full-viewport) ----
+         No overflow:hidden: the corner rounding would clip the control
+         corner (d-pad/toggle) from hit-testing; the #tv bezel ring covers
+         the raw corners instead. */
+      @property --neon {
+        syntax: "<color>";
+        inherits: true;
+        initial-value: #00e5ff;
+      }
+      #screen {
+        /* per-level accent; JS transitions it (see ThemeMixer) */
+        --neon: #00e5ff;
+        --neon-glow: color-mix(in srgb, var(--neon) 30%, transparent);
+        transition: --neon 0.6s ease-out;
+        position: absolute;
+        inset: 0;
+        /* #tv sets pointer-events:none for the bezel ring; pointer-events
+           inherits, so re-enable it here or the game loses all input. */
+        pointer-events: auto;
+        background: #02030a;
+        cursor: none;
+        border-radius: 22px;
+      }
+      /* glass reflection */
+      #screen::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          115deg,
+          rgba(255, 255, 255, 0.045) 0%,
+          rgba(255, 255, 255, 0.015) 18%,
+          transparent 34%
+        );
+        pointer-events: none;
+        z-index: 9;
+      }
+      /* subtle CRT flicker (opacity only — GPU-composited, no repaint) */
+      #screen::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: rgba(180, 220, 255, 0.02);
+        pointer-events: none;
+        z-index: 9;
+        animation: crt-flicker 4s steps(3) infinite;
+      }
+      @keyframes crt-flicker {
+        0%, 100% { opacity: 0.5; }
+        40% { opacity: 1; }
+        42% { opacity: 0.3; }
+        44% { opacity: 0.9; }
+        70% { opacity: 0.7; }
+      }
+
+      #stage {
+        position: absolute;
+        inset: 0;
+        touch-action: none;
+      }
+      #stage canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      /* ---- HUD ---- */
+      #hud {
+        position: absolute;
+        top: calc(8% + 6px);
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: center;
+        gap: 14px;
+        flex-wrap: wrap;
+        pointer-events: none;
+        z-index: 5;
+        font-family: "Courier New", monospace;
+        font-weight: 700;
+        font-size: 13px;
+        letter-spacing: 1px;
+      }
+      .hud-item {
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+        padding: 4px 10px;
+        border: 1px solid rgba(0, 229, 255, 0.35);
+        border-radius: 3px;
+        background: rgba(5, 6, 15, 0.72);
+        box-shadow:
+          0 0 8px var(--neon-glow),
+          inset 0 0 6px color-mix(in srgb, var(--neon) 12%, transparent);
+      }
+      .hud-label {
+        color: #7c4dff;
+        text-shadow: 0 0 6px rgba(124, 77, 255, 0.9);
+        font-size: 10px;
+      }
+      .hud-value {
+        color: var(--neon);
+        text-shadow: 0 0 8px var(--neon-glow);
+      }
+      #hud-score .hud-value {
+        color: #ffd166;
+        text-shadow: 0 0 8px rgba(255, 209, 102, 0.9);
+      }
+      #hud-combo {
+        display: none;
+      }
+      #hud-combo:not(.hidden) {
+        display: flex;
+      }
+      #hud-combo .hud-value {
+        color: #ff2e88;
+        text-shadow: 0 0 10px rgba(255, 46, 136, 0.95);
+      }
+
+      /* ---- Banners ---- */
+      #banner {
+        position: absolute;
+        top: 38%;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-family: "Courier New", monospace;
+        font-weight: 700;
+        font-size: 34px;
+        letter-spacing: 6px;
+        color: var(--neon);
+        text-shadow:
+          0 0 12px var(--neon-glow),
+          0 0 42px color-mix(in srgb, var(--neon) 55%, transparent);
+        opacity: 0;
+        pointer-events: none;
+        z-index: 6;
+      }
+      #banner.show {
+        animation: banner-pop 1.5s ease-out both;
+      }
+      @keyframes banner-pop {
+        0% { opacity: 0; transform: scale(0.6); }
+        12% { opacity: 1; transform: scale(1.08); }
+        22% { transform: scale(1); }
+        78% { opacity: 1; }
+        100% { opacity: 0; transform: scale(1.02); }
+      }
+
+      /* ---- Footer ---- */
+      #footer {
+        position: absolute;
+        bottom: calc(8% + 6px);
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-family: "Courier New", monospace;
+        font-size: 11px;
+        letter-spacing: 2px;
+        color: #2b2f52;
+        pointer-events: none;
+        z-index: 5;
+      }
+
+      /* ---- Overlays (title / pause / game over) ---- */
+      .overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 8;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        background: rgba(3, 4, 12, 0.82);
+        font-family: "Courier New", monospace;
+        text-align: center;
+      }
+      .logo {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        line-height: 1;
+      }
+      .logo-line {
+        font-size: clamp(40px, 9vw, 76px);
+        font-weight: 700;
+        letter-spacing: 14px;
+        padding-left: 14px; /* optical centre with letter-spacing */
+      }
+      .logo-neon {
+        color: var(--neon);
+        text-shadow:
+          0 0 10px rgba(0, 229, 255, 0.9),
+          0 0 34px rgba(0, 229, 255, 0.55),
+          0 0 80px rgba(0, 229, 255, 0.3);
+        animation: logo-flicker 2.4s linear infinite;
+      }
+      @keyframes logo-flicker {
+        0%, 7%, 9%, 100% { opacity: 1; }
+        8% { opacity: 0.72; }
+        46%, 48% { opacity: 1; }
+        47% { opacity: 0.85; }
+      }
+      .logo-snake {
+        color: #ff2e88;
+        text-shadow:
+          0 0 10px rgba(255, 46, 136, 0.9),
+          0 0 34px rgba(255, 46, 136, 0.55),
+          0 0 80px rgba(255, 46, 136, 0.3);
+      }
+      .prompt {
+        font-size: 14px;
+        letter-spacing: 4px;
+        color: #ffd166;
+        text-shadow: 0 0 10px rgba(255, 209, 102, 0.7);
+        animation: prompt-blink 1.6s ease-in-out infinite;
+      }
+      @keyframes prompt-blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.35; }
+      }
+      .panel-title {
+        font-size: clamp(28px, 6vw, 44px);
+        font-weight: 700;
+        letter-spacing: 10px;
+        padding-left: 10px;
+        color: var(--neon);
+        text-shadow: 0 0 14px rgba(0, 229, 255, 0.9), 0 0 50px rgba(0, 229, 255, 0.45);
+      }
+      .panel-title.danger {
+        color: #ff5470;
+        text-shadow: 0 0 14px rgba(255, 84, 112, 0.95), 0 0 50px rgba(255, 84, 112, 0.5);
+      }
+      .stat-row {
+        display: flex;
+        gap: 14px;
+        align-items: baseline;
+        font-size: 18px;
+        letter-spacing: 3px;
+      }
+      .stat-label {
+        color: #7c4dff;
+        text-shadow: 0 0 8px rgba(124, 77, 255, 0.8);
+        width: 120px;
+        text-align: right;
+      }
+      .stat-value {
+        color: #ffd166;
+        text-shadow: 0 0 10px rgba(255, 209, 102, 0.85);
+      }
+      .newbest-chip {
+        font-size: 16px;
+        letter-spacing: 4px;
+        color: #22ffb0;
+        text-shadow: 0 0 12px rgba(34, 255, 176, 0.9);
+        border: 1px solid rgba(34, 255, 176, 0.5);
+        padding: 6px 14px;
+        border-radius: 3px;
+        animation: prompt-blink 1.2s ease-in-out infinite;
+      }
+
+      /* ---- Buttons / controls above overlays ---- */
+      /* safe-area insets (notched phones) where env() is supported:
+         nudge the in-screen chrome, never the canvas geometry */
+      @supports (top: env(safe-area-inset-top)) {
+        #hud { top: calc(8% + env(safe-area-inset-top) + 6px); }
+        #footer { bottom: calc(8% + env(safe-area-inset-bottom) + 6px); }
+      }
+    
+      .score-pop {
+        position: absolute;
+        z-index: 9;
+        font: 700 15px "Courier New", monospace;
+        letter-spacing: 1px;
+        color: var(--neon);
+        text-shadow: 0 0 8px var(--neon-glow), 0 0 18px var(--neon-glow);
+        pointer-events: none;
+        opacity: 0;
+        transform: translate(-50%, -50%);
+        white-space: nowrap;
+      }
+      .score-pop.show {
+        animation: scorepop 0.7s ease-out forwards;
+      }
+      @keyframes scorepop {
+        0% { opacity: 1; margin-top: 0; }
+        100% { opacity: 0; margin-top: -30px; }
+      }
+</style>
+  </head>
+  <body>
+    <div id="tv">
+      <div id="screen">
+        <div id="stage">
+          <canvas id="game"></canvas>
+        </div>
+      </div>
+      <div id="tv-led"></div>
+    </div>
+    <div id="tv-frame"></div>
+    <script type="module" src="/app/main.ts"></script>
+  </body>
+</html>
