@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NEON SNAKE — two builds</title>
-  <meta name="description" content="Two independent builds of the same neon snake spec, generated with Qwen3.8 27B (NVFP4) on an RTX PRO 6000." />
+  <title>NEON SNAKE — three builds</title>
+  <meta name="description" content="Three independent builds of the same neon snake spec: two by Qwen3.8 27B (NVFP4) agents on an RTX PRO 6000, plus a baseline by Claude Code with Fable 5.1." />
   <style>
     :root {
       --bg: #030409;
@@ -13,6 +13,7 @@
       --cyan: #00e5ff;
       --magenta: #ff2e88;
       --violet: #9d6bff;
+      --gold: #ffd166;
       --text: #cdd6f4;
       --dim: #7f8bb0;
     }
@@ -31,7 +32,7 @@
         radial-gradient(55% 40% at 50% 115%, rgba(0, 229, 255, 0.08), transparent 70%),
         radial-gradient(45% 35% at 15% -10%, rgba(255, 46, 136, 0.07), transparent 70%);
     }
-    .wrap { width: 100%; max-width: 720px; text-align: center; }
+    .wrap { width: 100%; max-width: 980px; text-align: center; }
     .tag {
       display: inline-block;
       font-size: 11px;
@@ -57,7 +58,7 @@
     .sub b { color: var(--text); font-weight: 600; }
     .cards {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 16px;
       text-align: left;
     }
@@ -74,9 +75,11 @@
     .card:hover { transform: translateY(-2px); }
     .card.opencode:hover { border-color: var(--cyan); box-shadow: 0 0 24px rgba(0, 229, 255, 0.18); }
     .card.pi-agent:hover { border-color: var(--magenta); box-shadow: 0 0 24px rgba(255, 46, 136, 0.18); }
+    .card.claude:hover { border-color: var(--gold); box-shadow: 0 0 24px rgba(255, 209, 102, 0.18); }
     .card .name { font-size: 17px; letter-spacing: 0.04em; }
     .card.opencode .name { color: var(--cyan); }
     .card.pi-agent .name { color: var(--magenta); }
+    .card.claude .name { color: var(--gold); }
     .card .desc { margin-top: 8px; font-size: 12.5px; line-height: 1.6; color: var(--dim); }
     .card .play {
       margin-top: 14px;
@@ -86,9 +89,12 @@
     }
     .card.opencode .play { color: var(--cyan); }
     .card.pi-agent .play { color: var(--magenta); }
+    .card.claude .play { color: var(--gold); }
+    .card .tagline { display: inline-block; margin-top: 8px; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); border: 1px solid rgba(255, 209, 102, 0.35); border-radius: 999px; padding: 2px 8px; }
     footer { margin-top: 44px; font-size: 11.5px; color: var(--dim); line-height: 1.8; }
     footer a { color: var(--violet); text-decoration: none; }
     footer a:hover { text-decoration: underline; }
+    @media (max-width: 900px) { .cards { grid-template-columns: 1fr 1fr; } }
     @media (max-width: 560px) { .cards { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -97,14 +103,15 @@
     <span class="tag">kinncj / neon-snake</span>
     <h1>NEON <span class="m">SNAKE</span></h1>
     <p class="sub">
-      Two independent builds of the same spec, generated end-to-end with<br />
-      <b>Qwen3.8 27B (NVFP4)</b> on an <b>NVIDIA RTX PRO 6000</b> — pick a build and play.
+      Three independent builds of the same spec: two generated end-to-end with<br />
+      <b>Qwen3.8 27B (NVFP4)</b> on an <b>NVIDIA RTX PRO 6000</b>, and a baseline by<br />
+      <b>Claude Code with Fable 5.1</b> — pick a build and play.
     </p>
     <div class="cards">
       <a class="card opencode" href="opencode/">
         <div class="name">▸ opencode</div>
         <div class="desc">
-          Built by the <b>opencode</b> agent. Phaser 4 FX, Tone.js lo-fi, CRT-TV
+          Built with the <b>opencode</b> harness. Phaser 4 FX, Tone.js lo-fi, CRT-TV
           shell, 5 levels, en/ja/es.
         </div>
         <div class="play">play →</div>
@@ -112,7 +119,7 @@
       <a class="card pi-agent" href="pi-agent/">
         <div class="name">▸ pi-agent</div>
         <div class="desc">
-          Built by the <b>pi-agent</b> agent. Same spec, independent
+          Built with the <b>pi-agent</b> harness. Same spec, independent
           implementation — same neon, same lo-fi.
         </div>
         <div class="play">play →</div>
@@ -120,7 +127,7 @@
     </div>
     <footer>
       Source &amp; build docs: <a href="https://github.com/kinncj/neon-snake">github.com/kinncj/neon-snake</a><br />
-      Each build ships its own <code>docs/</code> — ADRs, build reports, playtest screenshots.
+      Each build ships its own <code>docs/</code> — ADRs, build reports, etc.
     </footer>
   </div>
 </body>

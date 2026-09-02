@@ -1,5 +1,5 @@
-# Builds both snake packages and deploys the composed site (landing page +
-# opencode/ + pi-agent/) to GitHub Pages.
+# Builds all three snake packages and deploys the composed site (landing page +
+# opencode/ + pi-agent/ + claude-code-fable/) to GitHub Pages.
 #
 # Pages source must be set to "GitHub Actions" (Settings → Pages →
 # Build and deployment → Source). The gh-pages branch is managed by this
@@ -9,6 +9,7 @@
 #   https://kinncj.github.io/neon-snake/           (site/index.html)
 #   https://kinncj.github.io/neon-snake/opencode/  (opencode/dist)
 #   https://kinncj.github.io/neon-snake/pi-agent/  (pi-agent/dist)
+#   https://kinncj.github.io/neon-snake/claude-code-fable/  (claude-code-fable/dist)
 
 name: Deploy to GitHub Pages
 
@@ -48,14 +49,21 @@ jobs:
           npm ci
           SNAKE_BUILD="pages-${GITHUB_SHA}" npm run build
 
-      # Both builds use a relative base (vite.config.ts), so the dist/
+      - name: Build claude-code-fable
+        working-directory: claude-code-fable
+        run: |
+          npm ci
+          SNAKE_BUILD="pages-${GITHUB_SHA}" NODE_ENV=production npm run build
+
+      # All builds use a relative base (vite.config.ts), so the dist/
       # folders run unchanged from any sub-path of the site.
       - name: Assemble site
         run: |
-          mkdir -p site-build/opencode site-build/pi-agent
+          mkdir -p site-build/opencode site-build/pi-agent site-build/claude-code-fable
           cp site/index.html site-build/
           cp -r opencode/dist/. site-build/opencode/
           cp -r pi-agent/dist/. site-build/pi-agent/
+          cp -r claude-code-fable/dist/. site-build/claude-code-fable/
 
       - uses: actions/upload-pages-artifact@v3
         with:
