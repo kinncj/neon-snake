@@ -220,6 +220,8 @@ export interface Framebuffer {
   resize(display: HTMLCanvasElement, dpr: number): void;
   /** Blits the framebuffer onto the display canvas, letterboxed in `bg`. */
   composite(display: HTMLCanvasElement, bg: string): void;
+  /** RGBA of one framebuffer pixel (256x240 space); cheap to read every frame. */
+  pixel(x: number, y: number): number[];
 }
 
 export function createFramebuffer(): Framebuffer {
@@ -253,6 +255,10 @@ export function createFramebuffer(): Framebuffer {
       d.fillStyle = bg;
       d.fillRect(0, 0, fit.backingW, fit.backingH);
       d.drawImage(canvas, fit.dx, fit.dy, fit.w, fit.h);
+    },
+    pixel(x, y) {
+      const d = ctx.getImageData(x, y, 1, 1).data;
+      return [d[0]!, d[1]!, d[2]!, d[3]!];
     }
   };
 }

@@ -17,6 +17,18 @@ html, body {
   display: block;
   background: #000;
   touch-action: none;
+  z-index: 1;
+}
+/* The engine canvas sits over the 2D composite; pointer events fall through. */
+#fx {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  pointer-events: none;
+  z-index: 2;
+  visibility: hidden;
 }
 
 /* On-screen d-pad: hidden until the settings panel shows it. */
