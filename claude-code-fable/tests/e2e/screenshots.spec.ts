@@ -45,7 +45,8 @@ test("02 play L1 / 03 L2 theme / 04 pause", async ({ page }) => {
   await page.waitForFunction(() => window.__snake.restarts() === 1);
   await page.evaluate(() => window.__snake.addScore(150));
   await page.waitForFunction(() => window.__snake.theme().settled && window.__snake.theme().name === "neon-magenta", null, { timeout: 3000 });
-  await settle(page, 300);
+  await page.evaluate(() => window.__snake.foodAhead());
+  await settle(page, 250);
   await page.screenshot({ path: `${DIR}/03-play-l2-theme.png` });
   await page.keyboard.press("KeyP");
   await page.waitForFunction(() => window.__snake.state().phase === "paused");
@@ -75,11 +76,16 @@ test("07 ultra 1080p L1 / 08 ultra 1080p L3", async ({ browser }) => {
   await page.evaluate(() => window.__snake.foodAhead());
   await settle(page, 500);
   await page.screenshot({ path: `${DIR}/07-ultra-1080p-l1.png` });
+  // Level 3 ticks fast: pause right after the re-tint so the shot shows play, not a death.
   await page.keyboard.press("KeyR");
   await page.waitForFunction(() => window.__snake.restarts() === 1);
   await page.evaluate(() => window.__snake.addScore(400));
   await page.waitForFunction(() => window.__snake.theme().name === "electric-violet" && window.__snake.theme().settled, null, { timeout: 3000 });
-  await settle(page, 300);
+  await page.evaluate(() => window.__snake.foodAhead());
+  await settle(page, 200);
+  await page.evaluate(() => window.__snake.freeze());
+  await settle(page, 100);
   await page.screenshot({ path: `${DIR}/08-ultra-1080p-l3.png` });
+  await page.evaluate(() => window.__snake.unfreeze());
   await ctx.close();
 });
