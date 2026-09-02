@@ -29,8 +29,15 @@ for (const [w, h, dpr] of MATRIX) {
   test(`full field at ${w}x${h}@${dpr}: integer scale, 1:1 cells, no clipping`, async ({ browser }) => {
     const { ctx, page } = await openAt(browser, w, h, dpr);
     const f = await fit(page);
-    expect(f.backingW).toBe(Math.round(w * dpr));
-    expect(f.backingH).toBe(Math.round(h * dpr));
+    // The display canvas fills the CRT glass, which is inset from the viewport by the bezel.
+    const glass = await page.evaluate(() => {
+      const c = document.getElementById("display")!;
+      return [c.clientWidth, c.clientHeight];
+    });
+    expect(f.backingW).toBe(Math.round(glass[0]! * dpr));
+    expect(f.backingH).toBe(Math.round(glass[1]! * dpr));
+    expect(glass[0]!).toBeLessThan(w);
+    expect(glass[1]!).toBeLessThan(h);
     expect(f.scale).toBe(Math.max(1, Math.floor(Math.min(f.backingW / FB_W, f.backingH / FB_H))));
     expect(f.w).toBe(FB_W * f.scale);
     expect(f.h).toBe(FB_H * f.scale);
@@ -79,8 +86,9 @@ test("mid-session resize keeps the simulation state unchanged", async ({ page })
   expect(await page.evaluate(() => window.__snake.hash())).toBe(before);
   expect((await snakeState(page)).tick).toBe(tickBefore);
   const f = await fit(page);
-  expect(f.backingW).toBe(640);
-  expect(f.scale).toBe(2);
+  const glassW = await page.evaluate(() => document.getElementById("display")!.clientWidth);
+  expect(f.backingW).toBe(glassW);
+  expect(f.scale).toBe(Math.max(1, Math.floor(Math.min(f.backingW / FB_W, f.backingH / FB_H))));
   await page.evaluate(() => window.__snake.unfreeze());
   await page.waitForTimeout(200);
   expect((await snakeState(page)).tick).toBeGreaterThan(tickBefore);

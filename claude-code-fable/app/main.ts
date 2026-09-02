@@ -26,6 +26,8 @@ import { type UiMode, createOverlays } from "./adapters/ui/overlays";
 setLocale(detectLocale(new URLSearchParams(window.location.search).get("lang"), navigator.languages ?? [navigator.language]));
 
 const display = document.getElementById("display") as HTMLCanvasElement;
+const buildEl = document.getElementById("build");
+if (buildEl) buildEl.textContent = "build " + (typeof __SNAKE_BUILD__ === "string" ? __SNAKE_BUILD__ : "dev");
 const fxCanvas = document.getElementById("fx") as HTMLCanvasElement;
 const state = init("snake-0001");
 const sink = createSink();

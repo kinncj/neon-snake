@@ -401,8 +401,8 @@ export async function createPhaserFx(canvas: HTMLCanvasElement, initialFit: Fit,
   }
 
   const cssSize = (): void => {
-    canvas.style.width = "100vw";
-    canvas.style.height = "100vh";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
   };
   cssSize();
 

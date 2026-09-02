@@ -7,11 +7,18 @@
     <title>NEON SNAKE</title>
   </head>
   <body>
-    <canvas id="display" aria-label="game"></canvas>
-    <canvas id="fx" aria-hidden="true"></canvas>
-    <div id="hud"></div>
-    <div id="overlay"></div>
-    <button id="mute" type="button" data-i18n="sound" data-i18n-attr="aria-label,title" aria-label="Sound on/off (M)" aria-pressed="false" title="Sound on/off (M)">&#9834;</button>
+    <div id="tv">
+      <div id="screen">
+        <canvas id="display" aria-label="game"></canvas>
+        <canvas id="fx" aria-hidden="true"></canvas>
+        <div id="hud"></div>
+        <div id="overlay"></div>
+        <footer id="footer"><span id="build"></span></footer>
+      </div>
+      <div id="tv-frame" aria-hidden="true"></div>
+      <div id="tv-led" aria-hidden="true"></div>
+      <button id="mute" type="button" data-i18n="sound" data-i18n-attr="aria-label,title" aria-label="Sound on/off (M)" aria-pressed="false" title="Sound on/off (M)">&#9834;</button>
+    </div>
     <script type="module" src="/app/main.ts"></script>
   </body>
 </html>
