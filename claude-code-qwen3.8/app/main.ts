@@ -6,6 +6,9 @@ import { enqueue } from './domain/intents'
 import { tickMsForLevel } from './domain/levels'
 import { init, step } from './domain/step'
 import { createSink, sinkReset, type Intent, type SnakeState } from './domain/types'
+import { createGamepad } from './adapters/input/gamepad'
+import { createKeyboard } from './adapters/input/keyboard'
+import { createDpad, createSwipe } from './adapters/input/touch'
 import { Framebuffer, type Layout } from './adapters/render/framebuffer'
 import { themeForLevel } from './adapters/render/theme'
 import { FixedTimestepLoop } from './runtime/loop'
@@ -43,6 +46,15 @@ function drainIntents(): void {
     if (intent) applyIntent(intent)
   }
 }
+
+const pushIntent = (intent: Intent): void => {
+  intentQueue.push(intent)
+}
+createKeyboard(pushIntent)
+createGamepad(pushIntent)
+createSwipe(pushIntent, canvas)
+const dpad = createDpad(pushIntent) // hidden by default; the settings panel owns visibility
+document.body.appendChild(dpad.root)
 
 function resize(): void {
   fb.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1)
@@ -86,6 +98,8 @@ declare global {
       freeze(): void
       unfreeze(): void
       setFrozen(v: boolean): void
+      setDpadVisible(v: boolean): void
+      dpadVisible(): boolean
     }
   }
 }
@@ -119,5 +133,11 @@ window.__snake = {
   },
   setFrozen(v: boolean): void {
     frozen = v
+  },
+  setDpadVisible(v: boolean): void {
+    dpad.setVisible(v)
+  },
+  dpadVisible(): boolean {
+    return dpad.isVisible()
   },
 }
