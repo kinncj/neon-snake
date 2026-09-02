@@ -17,6 +17,8 @@ export interface SnakeDebug {
   sample(x: number, y: number): number[];
   freeze(): void;
   unfreeze(): void;
+  setDpad(v: boolean): void;
+  dpadVisible(): boolean;
   build: string;
 }
 

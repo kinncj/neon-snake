@@ -7,6 +7,7 @@ import { createFramebuffer, BASE_PALETTE } from "./adapters/render/framebuffer";
 import { createIntentQueue } from "./adapters/input/queue";
 import { attachKeyboard } from "./adapters/input/keyboard";
 import { createGamepadPoller } from "./adapters/input/gamepad";
+import { attachTouch, createDpad } from "./adapters/input/touch";
 
 const TICK_MS = 120;
 
@@ -19,6 +20,9 @@ const fb = createFramebuffer();
 const queue = createIntentQueue();
 attachKeyboard(window, queue);
 const gamepad = createGamepadPoller(navigator, queue);
+attachTouch(display, queue);
+const dpad = createDpad(queue);
+document.body.appendChild(dpad.root);
 
 function drainIntents(): void {
   for (let i = queue.shift(); i >= 0; i = queue.shift()) apply(state, i);
@@ -62,6 +66,8 @@ const debug = {
   /** Stops the loop (simulation and rendering) so a test can read a stable frame. */
   freeze: () => loop.stop(),
   unfreeze: () => loop.start(),
+  setDpad: (v: boolean) => dpad.setVisible(v),
+  dpadVisible: () => dpad.isVisible(),
   /** RGBA of the display canvas at a backing-store pixel. */
   sample(x: number, y: number): number[] {
     const ctx = display.getContext("2d");

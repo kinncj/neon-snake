@@ -84,3 +84,27 @@ describe("gamepad mapping", () => {
     expect([q.shift(), q.shift()]).toEqual([2, INTENT_PAUSE]);
   });
 });
+
+describe("swipe recogniser", () => {
+  it("fires once per gesture on the dominant axis past the threshold", async () => {
+    const { createSwipe, SWIPE_PX } = await import("../../app/adapters/input/touch");
+    const s = createSwipe();
+    s.begin(100, 100);
+    expect(s.move(100 + SWIPE_PX - 1, 100)).toBe(-1);
+    expect(s.move(100 + SWIPE_PX, 105)).toBe(0); // right
+    expect(s.move(100 + SWIPE_PX * 3, 100)).toBe(-1); // already fired
+    s.end();
+    s.begin(0, 0);
+    expect(s.move(-10, 40)).toBe(1); // down beats a small leftward drift
+    s.end();
+    s.begin(0, 0);
+    expect(s.move(-30, -29)).toBe(2); // ties go to the horizontal axis
+    s.end();
+    s.begin(0, 0);
+    expect(s.move(3, -30)).toBe(3); // up
+    expect(s.active()).toBe(true);
+    s.end();
+    expect(s.active()).toBe(false);
+    expect(s.move(50, 50)).toBe(-1); // no gesture in progress
+  });
+});
