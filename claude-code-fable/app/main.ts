@@ -3,6 +3,7 @@ import { init, step, apply } from "./domain/step";
 import { hash } from "./domain/hash";
 import { createSink, resetSink } from "./domain/types";
 import { createLoop } from "./runtime/loop";
+import { type Tier, createGovernor, probeCapabilities, tierForCapabilities, prefersReducedMotion } from "./runtime/quality";
 import { createFramebuffer, BASE_PALETTE } from "./adapters/render/framebuffer";
 import { createIntentQueue } from "./adapters/input/queue";
 import { attachKeyboard } from "./adapters/input/keyboard";
@@ -15,6 +16,11 @@ const display = document.getElementById("display") as HTMLCanvasElement;
 const state = init("snake-0001");
 const sink = createSink();
 const fb = createFramebuffer();
+
+// Quality: probe once, then let the governor move the tier at runtime.
+const caps = probeCapabilities(document, navigator);
+const governor = createGovernor(tierForCapabilities(caps));
+governor.setForcedReduced(prefersReducedMotion(window));
 
 // Input: every adapter pushes into one queue; the loop drains it per frame.
 const queue = createIntentQueue();
@@ -40,7 +46,8 @@ const loop = createLoop({
     resetSink(sink);
     step(state, sink);
   },
-  onFrame(alpha) {
+  onFrame(alpha, frameMs) {
+    governor.sample(frameMs);
     gamepad.poll();
     drainIntents();
     fb.draw(state, alpha, BASE_PALETTE);
@@ -66,6 +73,10 @@ const debug = {
   /** Stops the loop (simulation and rendering) so a test can read a stable frame. */
   freeze: () => loop.stop(),
   unfreeze: () => loop.start(),
+  tier: () => governor.tier(),
+  autoTier: () => governor.autoTier(),
+  setTier: (t: Tier | null) => governor.pin(t),
+  caps: () => ({ ...caps }),
   setDpad: (v: boolean) => dpad.setVisible(v),
   dpadVisible: () => dpad.isVisible(),
   /** RGBA of the display canvas at a backing-store pixel. */

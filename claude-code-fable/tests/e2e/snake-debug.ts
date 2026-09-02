@@ -17,6 +17,10 @@ export interface SnakeDebug {
   sample(x: number, y: number): number[];
   freeze(): void;
   unfreeze(): void;
+  tier(): string;
+  autoTier(): string;
+  setTier(t: string | null): void;
+  caps(): { webgl2: boolean; maxTextureSize: number; hardwareConcurrency: number };
   setDpad(v: boolean): void;
   dpadVisible(): boolean;
   build: string;
