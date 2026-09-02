@@ -18,6 +18,7 @@ export interface SnakeDebug {
   fbSample(x: number, y: number): number[];
   glSample(x: number, y: number): number[];
   cellPixel(x: number, y: number): [number, number];
+  bodyCell(i: number): [number, number];
   freeze(): void;
   unfreeze(): void;
   forceDeath(cause?: "wall" | "self"): void;

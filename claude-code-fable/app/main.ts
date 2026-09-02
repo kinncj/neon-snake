@@ -325,6 +325,8 @@ const debug = {
   fbSample: (x: number, y: number): number[] => fb.pixel(x, y),
   /** RGBA of the engine canvas at a backing-store pixel (1x1 drawImage readback). */
   glSample: (x: number, y: number): number[] => (fx ? fx.sample(x, y) : [0, 0, 0, 0]),
+  /** Grid cell of body segment i (0 = head). */
+  bodyCell: (i: number) => [cellX(state.body[i]!), cellY(state.body[i]!)],
   /** Backing-store pixel at the centre of a grid cell. */
   cellPixel: (x: number, y: number) => [
     fb.fit.dx + Math.floor((x + 0.5) * CELL_PX * fb.fit.scale),

@@ -27,13 +27,11 @@ test("a level-up re-tints the whole scene and settles on the new palette", async
   expect(near(bg, hexToRgb(theme.bg), 6)).toBe(true);
   const accentVar = await page.evaluate(() => getComputedStyle(document.getElementById("hud")!).getPropertyValue("--accent").trim());
   expect(accentVar).toBe("#ff2e88");
-  // The neck block is the new body colour.
+  // A body block two cells behind the head (never covered by the gliding head) is the new body colour.
   const neck = await page.evaluate(() => {
-    window.__snake.freeze(); // hold the frame so the neck cell cannot move under the probe
-    const s = window.__snake.state();
-    const nx = s.dir === 0 ? s.head[0] - 1 : s.dir === 2 ? s.head[0] + 1 : s.head[0];
-    const ny = s.dir === 1 ? s.head[1] - 1 : s.dir === 3 ? s.head[1] + 1 : s.head[1];
-    const px = window.__snake.fbSample(nx * 8 + 2, ny * 8 + 2);
+    window.__snake.freeze(); // hold the frame so the cell cannot move under the probe
+    const [bx, by] = window.__snake.bodyCell(2);
+    const px = window.__snake.fbSample(bx * 8 + 2, by * 8 + 2);
     window.__snake.unfreeze();
     return px;
   });
