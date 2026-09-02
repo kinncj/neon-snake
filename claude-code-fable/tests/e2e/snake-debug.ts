@@ -28,6 +28,7 @@ export interface SnakeDebug {
   caps(): { webgl2: boolean; maxTextureSize: number; hardwareConcurrency: number };
   fx(): { present: boolean; loading: boolean; failed: boolean; alive: boolean; frames: number; drawCount: number; bloom: number };
   loseContext(): void;
+  audio(): { enabled: boolean; contextCreated: boolean; contextState: string; muted: boolean; lastSfx: string; voiceSum: number };
   setDpad(v: boolean): void;
   dpadVisible(): boolean;
   replay(logText: string, ticks: number, seed?: string): string;

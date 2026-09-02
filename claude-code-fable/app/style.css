@@ -66,3 +66,22 @@ html, body {
 @media (orientation: landscape) and (max-height: 600px) {
   #dpad { right: auto; left: 18px; bottom: 50%; transform: translateY(50%); }
 }
+
+/* Mute: always visible, labelled, keyboard-reachable. */
+#mute {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 60;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 229, 255, 0.5);
+  background: rgba(10, 14, 30, 0.6);
+  color: #7ff7ff;
+  font: 700 18px/1 ui-monospace, monospace;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.8);
+  cursor: pointer;
+}
+#mute[aria-pressed="true"] { color: #7f8bb0; text-shadow: none; opacity: 0.8; }
+#mute:focus-visible { outline: 2px solid #ff2e88; outline-offset: 2px; }

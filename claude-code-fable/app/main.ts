@@ -14,6 +14,7 @@ import { attachKeyboard } from "./adapters/input/keyboard";
 import { createGamepadPoller } from "./adapters/input/gamepad";
 import { attachTouch, createDpad } from "./adapters/input/touch";
 import { type FxLayer, createPhaserFx } from "./adapters/render/phaser/phaser-fx";
+import { createAudio } from "./adapters/audio/synth";
 
 const TICK_MS = 120;
 
@@ -40,6 +41,45 @@ document.body.appendChild(dpad.root);
 function drainIntents(): void {
   for (let i = queue.shift(); i >= 0; i = queue.shift()) apply(state, i);
 }
+
+// Audio: the engine (and its AudioContext) is created on the first gesture.
+let storage: Storage | null = null;
+try {
+  storage = window.localStorage;
+} catch {
+  storage = null;
+}
+const audio = createAudio({ storage });
+const muteBtn = document.getElementById("mute") as HTMLButtonElement;
+function reflectMute(): void {
+  muteBtn.setAttribute("aria-pressed", audio.muted() ? "true" : "false");
+  muteBtn.textContent = audio.muted() ? "\u266a\u0338" : "\u266a";
+}
+function toggleMute(): void {
+  audio.setMuted(!audio.muted());
+  reflectMute();
+}
+muteBtn.addEventListener("click", () => {
+  toggleMute();
+  muteBtn.blur();
+});
+window.addEventListener("keydown", (e) => {
+  if (e.code === "KeyM" && !e.repeat) toggleMute();
+});
+reflectMute();
+const firstGesture = (): void => {
+  void audio.enable();
+  window.removeEventListener("keydown", firstGesture);
+  window.removeEventListener("pointerdown", firstGesture);
+  window.removeEventListener("touchstart", firstGesture);
+};
+window.addEventListener("keydown", firstGesture);
+window.addEventListener("pointerdown", firstGesture);
+window.addEventListener("touchstart", firstGesture, { passive: true });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") audio.suspend();
+  else audio.resume();
+});
 
 // The engine layer is created lazily the first time a tier needs it and is
 // put to sleep (ticker paused, canvas hidden) whenever the tier drops.
@@ -90,6 +130,7 @@ function dispatchEffects(): void {
     if (fx && (kind === EFFECT_ATE || kind === EFFECT_DIED || kind === EFFECT_LEVELUP)) {
       fx.onEffect(kind, sink.x[slot]!, sink.y[slot]!, sink.arg[slot]!, state);
     }
+    audio.onEffect(kind, sink.arg[slot]!, state.combo);
   }
 }
 
@@ -195,6 +236,14 @@ const debug = {
     bloom: fx ? fx.bloom() : 0
   }),
   loseContext: () => fx?.loseContext(),
+  audio: () => ({
+    enabled: audio.enabled(),
+    contextCreated: audio.contextCreated(),
+    contextState: audio.contextState(),
+    muted: audio.muted(),
+    lastSfx: audio.lastSfx(),
+    voiceSum: audio.voiceSum()
+  }),
   setDpad: (v: boolean) => dpad.setVisible(v),
   dpadVisible: () => dpad.isVisible(),
   /** RGBA of the display canvas (the 2D composite) at a backing-store pixel. */
