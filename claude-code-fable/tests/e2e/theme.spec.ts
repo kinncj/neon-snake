@@ -27,15 +27,25 @@ test("a level-up re-tints the whole scene and settles on the new palette", async
   expect(near(bg, hexToRgb(theme.bg), 6)).toBe(true);
   const accentVar = await page.evaluate(() => getComputedStyle(document.getElementById("hud")!).getPropertyValue("--accent").trim());
   expect(accentVar).toBe("#ff2e88");
-  // A body block two cells behind the head (never covered by the gliding head) is the new body colour.
-  const neck = await page.evaluate(() => {
+  // A body block two cells behind the head is the new body colour. Segments
+  // glide between cells, so scan the cell and its neighbours for the block.
+  const found = await page.evaluate((bodyHex) => {
     window.__snake.freeze(); // hold the frame so the cell cannot move under the probe
     const [bx, by] = window.__snake.bodyCell(2);
-    const px = window.__snake.fbSample(bx * 8 + 2, by * 8 + 2);
+    const v = parseInt(bodyHex.slice(1), 16);
+    const want = [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+    let hit = false;
+    for (let y = by * 8 - 8; y < by * 8 + 16 && !hit; y++) {
+      for (let x = bx * 8 - 8; x < bx * 8 + 16 && !hit; x++) {
+        if (x < 0 || y < 0 || x >= 256 || y >= 240) continue;
+        const c = window.__snake.fbSample(x, y);
+        if (Math.abs(c[0]! - want[0]!) <= 8 && Math.abs(c[1]! - want[1]!) <= 8 && Math.abs(c[2]! - want[2]!) <= 8) hit = true;
+      }
+    }
     window.__snake.unfreeze();
-    return px;
-  });
-  expect(near(neck, hexToRgb(theme.body), 8)).toBe(true);
+    return hit;
+  }, theme.body);
+  expect(found).toBe(true);
 });
 
 test("the transition is gradual, not a snap", async ({ page }) => {
