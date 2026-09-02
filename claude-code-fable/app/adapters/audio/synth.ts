@@ -1,4 +1,5 @@
 import { EFFECT_ATE, EFFECT_DIED, EFFECT_LEVELUP, CAUSE_WALL } from "../../domain/types";
+import { type Song, type MusicEvent, songForLevel, eventsInWindow, beatSeconds } from "./songs";
 
 /**
  * Procedural audio on Tone.js. No asset bytes: every sound is synthesised
@@ -112,9 +113,20 @@ export interface AudioEngine {
   contextState(): string;
   suspend(): void;
   resume(): void;
-  /** Access to the music bus for the song player (step 22). */
-  music(): { tone: ToneNS; bus: import("tone").Filter } | null;
+  /** Crossfades (250 ms) to the song for `level`; no-op before enable(). */
+  playSong(level: number): void;
+  /** Name of the song currently playing, or "" when silent. */
+  song(): string;
+  /** Recent song-player transitions, oldest first (debugging aid). */
+  history(): string[];
+  stopSong(): void;
 }
+
+/** Crossfade length between songs. */
+export const CROSSFADE_S = 0.25;
+/** Scheduler: wake every TICK_MS and book events up to LOOKAHEAD_S ahead. */
+export const SCHED_TICK_MS = 100;
+export const SCHED_LOOKAHEAD_S = 0.3;
 
 export interface AudioOptions {
   storage?: Storage | null;
@@ -139,6 +151,36 @@ export function createAudio(opts: AudioOptions = {}): AudioEngine {
   let isMuted = storage?.getItem(STORAGE_KEY) === "off";
   let last = "";
   let enabling: Promise<boolean> | null = null;
+
+  // Song player: two music lanes (A/B) so a level-up can crossfade.
+  interface Lane {
+    gain: import("tone").Gain;
+    chord: import("tone").PolySynth;
+    bass: import("tone").MonoSynth;
+    kick: import("tone").MembraneSynth;
+    snare: import("tone").NoiseSynth;
+    hat: import("tone").NoiseSynth;
+    arp: import("tone").Synth;
+    song: Song | null;
+    /** Song start in context seconds. */
+    startAt: number;
+    /** Beats scheduled so far. */
+    beat: number;
+    /** Bumped whenever the lane starts; a stale fade-out must not clear it. */
+    epoch: number;
+    /** Context time up to which notes have been booked on this lane's voices. */
+    scheduledUntil: number;
+  }
+  let lanes: [Lane, Lane] | null = null;
+  let activeLane = 0;
+  let schedTimer = 0;
+  const events: MusicEvent[] = [];
+  let wantedLevel = 0;
+  const hist: string[] = [];
+  const note = (s: string): void => {
+    if (hist.length >= 24) hist.shift();
+    hist.push(s);
+  };
 
   // Voice accounting for ducking: start/end/gain per scheduled voice, a ring.
   const activeStart = new Float64Array(ACTIVE_CAP);
@@ -201,12 +243,108 @@ export function createAudio(opts: AudioOptions = {}): AudioEngine {
       triangle.maxPolyphony = 6;
       lead.maxPolyphony = 4;
       voices = { pulse, triangle, lead, noise, membrane };
+      lanes = [makeLane(T, musicBus), makeLane(T, musicBus)];
+      if (wantedLevel > 0) startSong(wantedLevel);
       return true;
     } catch {
       tone = null;
       voices = null;
       return false;
     }
+  }
+
+  function makeLane(T: ToneNS, bus: import("tone").Filter): Lane {
+    const gain = new T.Gain(0).connect(bus);
+    const chord = new T.PolySynth(T.Synth, {
+      oscillator: { type: "triangle" },
+      envelope: { attack: 0.08, decay: 0.4, sustain: 0.55, release: 0.9 },
+      volume: -14
+    }).connect(gain);
+    chord.maxPolyphony = 8;
+    const bass = new T.MonoSynth({
+      oscillator: { type: "sine" },
+      envelope: { attack: 0.02, decay: 0.3, sustain: 0.5, release: 0.4 },
+      filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.3, release: 0.3, baseFrequency: 120, octaves: 2 },
+      volume: -9
+    }).connect(gain);
+    const kick = new T.MembraneSynth({ pitchDecay: 0.05, octaves: 6, envelope: { attack: 0.001, decay: 0.3, sustain: 0, release: 0.3 }, volume: -10 }).connect(gain);
+    const snare = new T.NoiseSynth({ noise: { type: "pink" }, envelope: { attack: 0.002, decay: 0.16, sustain: 0, release: 0.1 }, volume: -18 }).connect(gain);
+    const hat = new T.NoiseSynth({ noise: { type: "white" }, envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.02 }, volume: -26 }).connect(gain);
+    const arp = new T.Synth({ oscillator: { type: "square" }, envelope: { attack: 0.01, decay: 0.15, sustain: 0.1, release: 0.2 }, volume: -20 }).connect(gain);
+    return { gain, chord, bass, kick, snare, hat, arp, song: null, startAt: 0, beat: 0, epoch: 0, scheduledUntil: 0 };
+  }
+
+  function scheduleLane(lane: Lane, until: number): void {
+    if (!tone || !lane.song) return;
+    const spb = beatSeconds(lane.song);
+    const toBeat = (until - lane.startAt) / spb;
+    if (toBeat <= lane.beat) return;
+    events.length = 0;
+    eventsInWindow(lane.song, lane.beat, toBeat, events);
+    for (const e of events) {
+      const at = lane.startAt + e.at * spb;
+      const dur = Math.max(0.05, e.dur * spb);
+      // A voice refuses a note scheduled behind one it already holds; skip
+      // rather than let an engine assertion escape into the frame loop.
+      try {
+        switch (e.voice) {
+          case "chord": lane.chord.triggerAttackRelease(e.note, dur, at, e.vel); break;
+          case "bass": lane.bass.triggerAttackRelease(e.note, dur, at, e.vel); break;
+          case "kick": lane.kick.triggerAttackRelease("C1", dur, at, e.vel); break;
+          case "snare": lane.snare.triggerAttackRelease(dur, at, e.vel); break;
+          case "hat": lane.hat.triggerAttackRelease(dur, at, e.vel); break;
+          case "arp": lane.arp.triggerAttackRelease(e.note, dur, at, e.vel); break;
+        }
+      } catch {
+        note(`skip ${e.voice}@${at.toFixed(3)}`);
+      }
+      if (at + dur > lane.scheduledUntil) lane.scheduledUntil = at + dur;
+    }
+    lane.beat = toBeat;
+  }
+
+  function schedulerTick(): void {
+    if (!tone || !lanes) return;
+    const until = tone.now() + SCHED_LOOKAHEAD_S;
+    scheduleLane(lanes[activeLane]!, until);
+  }
+
+  function startSong(level: number): void {
+    if (!tone || !lanes || !musicBus) return;
+    const song = songForLevel(level);
+    const cur = lanes[activeLane]!;
+    note(`play L${level} ${song.name} cur=${cur.song?.name ?? "-"} lane=${activeLane}`);
+    if (cur.song === song) return;
+    const nextIdx = cur.song ? 1 - activeLane : activeLane;
+    const next = lanes[nextIdx]!;
+    const now = tone.now();
+    // Crossfade: the old lane ramps out while the new one ramps in.
+    if (cur.song && nextIdx !== activeLane) {
+      cur.gain.gain.cancelScheduledValues(now);
+      cur.gain.gain.setValueAtTime(cur.gain.gain.value, now);
+      cur.gain.gain.linearRampToValueAtTime(0, now + CROSSFADE_S);
+      const old = cur;
+      const epoch = old.epoch;
+      window.setTimeout(() => {
+        // Only clear the lane if it was not restarted during the fade.
+        if (old.epoch !== epoch) return;
+        note(`faded ${old.song?.name ?? "-"}`);
+        old.song = null;
+        old.chord.releaseAll();
+      }, CROSSFADE_S * 1000 + 50);
+    }
+    next.song = song;
+    // Never book behind notes this lane already holds from an earlier song.
+    next.startAt = Math.max(now + 0.05, next.scheduledUntil + 0.02);
+    next.beat = 0;
+    next.epoch++;
+    next.gain.gain.cancelScheduledValues(now);
+    next.gain.gain.setValueAtTime(0, now);
+    next.gain.gain.linearRampToValueAtTime(1, now + CROSSFADE_S);
+    musicBus.frequency.rampTo(song.cutoff, CROSSFADE_S);
+    activeLane = nextIdx;
+    scheduleLane(next, now + SCHED_LOOKAHEAD_S);
+    if (!schedTimer) schedTimer = window.setInterval(schedulerTick, SCHED_TICK_MS);
   }
 
   function play(name: SfxName): void {
@@ -267,6 +405,23 @@ export function createAudio(opts: AudioOptions = {}): AudioEngine {
     resume() {
       if (tone) void (tone.getContext().rawContext as AudioContext).resume();
     },
-    music: () => (tone && musicBus ? { tone, bus: musicBus } : null)
+    playSong(level) {
+      wantedLevel = level;
+      if (!lanes) note(`queued L${level}`);
+      startSong(level);
+    },
+    song: () => (lanes && lanes[activeLane]!.song ? lanes[activeLane]!.song!.name : ""),
+    history: () => hist.slice(),
+    stopSong() {
+      if (!tone || !lanes) return;
+      const cur = lanes[activeLane]!;
+      cur.gain.gain.rampTo(0, CROSSFADE_S);
+      cur.song = null;
+      wantedLevel = 0;
+      if (schedTimer) {
+        window.clearInterval(schedTimer);
+        schedTimer = 0;
+      }
+    }
   };
 }

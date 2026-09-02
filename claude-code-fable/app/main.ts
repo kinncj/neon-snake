@@ -79,7 +79,9 @@ window.addEventListener("keydown", (e) => {
 });
 reflectMute();
 const firstGesture = (): void => {
-  void audio.enable();
+  void audio.enable().then((ok) => {
+    if (ok) audio.playSong(state.level);
+  });
   window.removeEventListener("keydown", firstGesture);
   window.removeEventListener("pointerdown", firstGesture);
   window.removeEventListener("touchstart", firstGesture);
@@ -99,6 +101,7 @@ overlays.setTouch(window.matchMedia("(pointer: coarse)").matches);
 let started = false;
 let lastCause: "wall" | "self" | null = null;
 let newBest = false;
+let restarts = 0;
 
 function uiMode(): UiMode {
   if (!started) return "title";
@@ -115,6 +118,15 @@ function syncUi(): void {
   hud.update(state, highscore.get());
 }
 
+/** Adapters may fail (audio/GL engines); the game loop must not. */
+function guarded(fn: () => void): void {
+  try {
+    fn();
+  } catch (err) {
+    if (import.meta.env.DEV) console.error(err);
+  }
+}
+
 function drainIntents(): void {
   for (let i = queue.shift(); i >= 0; i = queue.shift()) {
     const kind = intentKind(i);
@@ -127,8 +139,10 @@ function drainIntents(): void {
     if (kind === "restart") {
       lastCause = null;
       newBest = false;
+      restarts++;
     }
     apply(state, i);
+    if (kind === "restart") guarded(() => audio.playSong(state.level));
   }
 }
 
@@ -179,11 +193,14 @@ function dispatchEffects(): void {
     const slot = effectAt(sink, i);
     const kind = sink.kind[slot]!;
     if (fx && (kind === EFFECT_ATE || kind === EFFECT_DIED || kind === EFFECT_LEVELUP)) {
-      fx.onEffect(kind, sink.x[slot]!, sink.y[slot]!, sink.arg[slot]!, state);
+      guarded(() => fx!.onEffect(kind, sink.x[slot]!, sink.y[slot]!, sink.arg[slot]!, state));
     }
-    audio.onEffect(kind, sink.arg[slot]!, state.combo);
+    guarded(() => audio.onEffect(kind, sink.arg[slot]!, state.combo));
     if (kind === EFFECT_ATE) hud.popup(sink.arg[slot]!, sink.x[slot]!, sink.y[slot]!, fb.fit, window.devicePixelRatio || 1);
-    if (kind === EFFECT_LEVELUP) hud.banner(sink.arg[slot]!);
+    if (kind === EFFECT_LEVELUP) {
+      hud.banner(sink.arg[slot]!);
+      guarded(() => audio.playSong(sink.arg[slot]!));
+    }
     if (kind === EFFECT_DIED) {
       lastCause = sink.arg[slot] === CAUSE_WALL ? "wall" : "self";
       newBest = highscore.submit(state.score);
@@ -221,7 +238,7 @@ const loop = createLoop({
     }
     fb.draw(state, alpha, palette, { fruit, grid: true });
     fb.composite(display, "#000000");
-    if (fx) fx.render(state, alpha, palette, fruit);
+    if (fx) guarded(() => fx!.render(state, alpha, palette, fruit));
     frameTimes[frameCursor] = frameMs;
     frameWork[frameCursor] = performance.now() - t0;
     frameCursor = (frameCursor + 1) % frameTimes.length;
@@ -312,7 +329,9 @@ const debug = {
     contextState: audio.contextState(),
     muted: audio.muted(),
     lastSfx: audio.lastSfx(),
-    voiceSum: audio.voiceSum()
+    voiceSum: audio.voiceSum(),
+    song: audio.song(),
+    history: audio.history()
   }),
   setDpad: (v: boolean) => dpad.setVisible(v),
   dpadVisible: () => dpad.isVisible(),
@@ -353,6 +372,8 @@ const debug = {
     }
   },
   uiMode,
+  /** Number of restart intents applied so far (tests wait on it). */
+  restarts: () => restarts,
   /** Adds points directly (tests): progression re-derives on the next tick. */
   addScore: (n: number) => {
     state.score += n;

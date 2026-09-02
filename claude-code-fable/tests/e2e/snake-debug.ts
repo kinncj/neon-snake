@@ -29,7 +29,7 @@ export interface SnakeDebug {
   caps(): { webgl2: boolean; maxTextureSize: number; hardwareConcurrency: number };
   fx(): { present: boolean; loading: boolean; failed: boolean; alive: boolean; frames: number; drawCount: number; bloom: number };
   loseContext(): void;
-  audio(): { enabled: boolean; contextCreated: boolean; contextState: string; muted: boolean; lastSfx: string; voiceSum: number };
+  audio(): { enabled: boolean; contextCreated: boolean; contextState: string; muted: boolean; lastSfx: string; voiceSum: number; song: string; history: string[] };
   setDpad(v: boolean): void;
   dpadVisible(): boolean;
   replay(logText: string, ticks: number, seed?: string): string;
@@ -42,6 +42,7 @@ export interface SnakeDebug {
   tti(): number;
   start(): void;
   uiMode(): string;
+  restarts(): number;
   addScore(n: number): void;
   combo(): number;
   palette(): Record<string, string>;

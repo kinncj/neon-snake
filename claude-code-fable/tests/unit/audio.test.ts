@@ -72,7 +72,9 @@ describe("engine lifecycle", () => {
     expect(a.contextCreated()).toBe(false);
     expect(a.enabled()).toBe(false);
     expect(a.voiceSum()).toBe(0);
-    expect(a.music()).toBeNull();
+    expect(a.song()).toBe("");
+    a.playSong(1);
+    expect(loads).toBe(0);
   });
   it("persists the mute state and reads it back", () => {
     const s = memStorage();

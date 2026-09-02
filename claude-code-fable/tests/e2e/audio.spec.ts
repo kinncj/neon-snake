@@ -81,3 +81,25 @@ test("the context suspends when the page is hidden", async ({ page }) => {
   });
   await page.waitForFunction(() => window.__snake.audio().contextState === "running", null, { timeout: 3000 });
 });
+
+test("a level-up crossfades to the next song and a restart returns to the first", async ({ page }) => {
+  await page.keyboard.press("Shift"); // a gesture that does not steer
+  await page.waitForFunction(() => window.__snake.audio().enabled, null, { timeout: 10_000 });
+  await page.waitForFunction(() => window.__snake.audio().song === "cozy-bedroom", null, { timeout: 3000 });
+  // Restart (a fresh snake with plenty of ticks of life ahead) and wait for the
+  // restart intent to be applied before bumping the score.
+  await page.keyboard.press("KeyR");
+  await page.waitForFunction(() => window.__snake.restarts() === 1);
+  await page.evaluate(() => window.__snake.addScore(150));
+  await page.waitForFunction(() => window.__snake.audio().song === "window-seat", null, { timeout: 3000 });
+  await page.keyboard.press("KeyR");
+  await page.waitForFunction(() => window.__snake.restarts() === 2);
+  await page.waitForFunction(() => window.__snake.audio().song === "cozy-bedroom", null, { timeout: 3000 });
+  await page.evaluate(() => window.__snake.addScore(1500));
+  try {
+    await page.waitForFunction(() => window.__snake.audio().song === "skyline-view", null, { timeout: 3000 });
+  } catch (e) {
+    const a = await page.evaluate(() => ({ audio: window.__snake.audio(), state: window.__snake.state() }));
+    throw new Error("song did not change: " + JSON.stringify(a), { cause: e });
+  }
+});
