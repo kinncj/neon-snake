@@ -8,7 +8,7 @@ import { createSink } from "../../app/domain/types";
 /** Pinned hash of seed `snake-0001` driven by tests/fixtures/run-a.log for 5000 ticks. */
 export const REPLAY_SEED = "snake-0001";
 export const REPLAY_TICKS = 5000;
-export const REPLAY_HASH = "d0f10c02";
+export const REPLAY_HASH = "52b1ba03";
 
 const LOG = parseLog(readFileSync("tests/fixtures/run-a.log", "utf8"));
 

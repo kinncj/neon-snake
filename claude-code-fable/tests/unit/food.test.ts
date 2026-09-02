@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { init, step, spawnFood, FOOD_VALUE } from "../../app/domain/step";
+import { init, step, spawnFood } from "../../app/domain/step";
+import { FOOD_VALUES } from "../../app/domain/levels";
+const FOOD_VALUE = FOOD_VALUES.apple;
 import {
   createSink, effectAt, cellX, cellY, packCell,
   EFFECT_ATE, EFFECT_GREW, EFFECT_SPAWNED, GRID_W, GRID_H, CELL_COUNT, START_LEN

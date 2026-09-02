@@ -2,15 +2,13 @@ import {
   type Dir, type EffectSink, type Intent, type State,
   GRID_W, GRID_H, CELL_COUNT, MAX_PENDING, START_LEN,
   DIR_DX, DIR_DY, DIR_RIGHT,
-  EFFECT_TURNED, EFFECT_ATE, EFFECT_GREW, EFFECT_SPAWNED, EFFECT_DIED,
+  EFFECT_TURNED, EFFECT_ATE, EFFECT_GREW, EFFECT_SPAWNED, EFFECT_DIED, EFFECT_LEVELUP,
   CAUSE_WALL, CAUSE_SELF,
   packCell, cellX, cellY, emit, intentKind
 } from "./types";
 import { seedFrom, next, rangeOf } from "./rng";
 import { enqueue } from "./intents";
-
-/** Points per food before any level or combo scaling. */
-export const FOOD_VALUE = 10;
+import { levelForScore, foodValueForLevel, nextCombo } from "./levels";
 
 /** Rejection-sampling attempts before falling back to a linear scan. */
 export const SPAWN_ATTEMPTS = 256;
@@ -156,11 +154,21 @@ export function step(s: State, sink: EffectSink): State {
 
   if (eating) {
     s.bodyLen++;
-    s.score += FOOD_VALUE;
+    // Combo: chain eats inside the window; the multiplier applies to this eat.
+    s.combo = nextCombo(s.combo, s.lastEatTick < 0 ? -1 : s.tick - s.lastEatTick);
+    const points = foodValueForLevel(s.level) * s.combo;
+    s.score += points;
     s.lastEatTick = s.tick;
-    emit(sink, EFFECT_ATE, nx, ny, FOOD_VALUE);
+    emit(sink, EFFECT_ATE, nx, ny, points);
     emit(sink, EFFECT_GREW, nx, ny, s.bodyLen);
     if (spawnFood(s)) emit(sink, EFFECT_SPAWNED, s.foodX, s.foodY);
+  }
+
+  // Progression is re-derived from the score every tick (tier-independent).
+  const level = levelForScore(s.score);
+  if (level !== s.level) {
+    s.level = level;
+    emit(sink, EFFECT_LEVELUP, nx, ny, level);
   }
   return s;
 }

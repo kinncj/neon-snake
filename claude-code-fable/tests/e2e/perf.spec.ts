@@ -39,9 +39,12 @@ test("p95 frame time at low under 4x CPU throttle is under 16.7 ms", async ({ pa
   expect(p95).toBeLessThan(16.7);
 });
 
-test("time to interactive: the game is ticking within 1.5 s of navigation", async ({ page }) => {
-  const t0 = Date.now();
+test("time to interactive: the first tick lands within 1.5 s of navigation start", async ({ page }) => {
   await page.goto("/");
-  await page.waitForFunction(() => typeof window.__snake !== "undefined" && window.__snake.state().tick >= 1);
-  expect(Date.now() - t0).toBeLessThan(1500);
+  await page.waitForFunction(() => typeof window.__snake !== "undefined" && window.__snake.tti() >= 0);
+  // Measured inside the page (performance.now() is relative to navigation
+  // start), so driver round-trips and the preview server are excluded.
+  const tti = await page.evaluate(() => window.__snake.tti());
+  expect(tti).toBeGreaterThan(0);
+  expect(tti).toBeLessThan(1500);
 });

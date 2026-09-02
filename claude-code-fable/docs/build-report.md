@@ -12,7 +12,7 @@ they ship; every row names the command that reproduces the number.
 | Unit + perf | `make test` | 17 files, 98 tests | all green | green |
 | Production build | `make build` | 465.4 KB gzipped total (`dist/`) | ≤ 500 KB | green |
 | E2E matrix | `make test-e2e` | 64 passed, 2 skipped (Chromium-only perf on Firefox) | 0 failed | green |
-| Replay hash (5000 ticks, `run-a.log`, seed `snake-0001`) | `npx vitest run tests/unit/replay.test.ts` | `d0f10c02` on two independent engines | equal | green |
+| Replay hash (5000 ticks, `run-a.log`, seed `snake-0001`) | `npx vitest run tests/unit/replay.test.ts` | `52b1ba03` on two independent engines (was `d0f10c02` before level scoring, step 17) | equal | green |
 | Tier-independent simulation | `npx playwright test tests/e2e/effects.spec.ts` | hash identical at low / high / ultra / reduced | equal | green |
 | p95 frame work at `low`, 4× CPU throttle, 600 frames | `npx playwright test --project=chromium tests/e2e/perf.spec.ts` | p50 0.80 ms, p95 1.20 ms, max 1.80 ms | < 16.7 ms | green |
 | p95 frame work at `low` (node, stub context, 600 frames × 4) | `make bench` | see `tests/perf/frame.test.ts` (asserts p95 × 4 < 16.7 ms) | < 16.7 ms | green |
@@ -57,7 +57,7 @@ Audit of `app/domain/*.ts` (`grep -nE "window|document|navigator|performance|req
   both the unit suite and the in-page debug API need it and it must stay
   pure.
 - **Replay hash.** The spec's reference hash (`2e58d3c2`) belongs to its
-  own fixture and serialisation; this build's pinned hash is `d0f10c02`
+  own fixture and serialisation; this build's pinned hash is `52b1ba03`
   for its own committed `tests/fixtures/run-a.log` (526 intents, recorded
   by `scripts/gen-fixture.ts`).
 - **Draw-batch metric.** Phaser 4's WebGL renderer does not maintain a

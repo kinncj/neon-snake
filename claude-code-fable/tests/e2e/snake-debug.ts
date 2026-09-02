@@ -36,6 +36,8 @@ export interface SnakeDebug {
   frameWork(): number[];
   highscore(): number;
   frameCount(): number;
+  tti(): number;
+  combo(): number;
   palette(): Record<string, string>;
   build: string;
 }

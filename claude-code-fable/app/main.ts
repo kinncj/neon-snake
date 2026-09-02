@@ -6,6 +6,7 @@ import {
   type State, createSink, resetSink, effectAt, packCell, cellX, cellY,
   EFFECT_ATE, EFFECT_DIED, EFFECT_LEVELUP, GRID_W, GRID_H, CELL_PX
 } from "./domain/types";
+import { tickMsForLevel, foodForLevel } from "./domain/levels";
 import { createLoop } from "./runtime/loop";
 import { type Tier, createGovernor, probeCapabilities, tierForCapabilities, prefersReducedMotion } from "./runtime/quality";
 import { createFramebuffer, BASE_PALETTE, type FruitKind } from "./adapters/render/framebuffer";
@@ -17,14 +18,13 @@ import { type FxLayer, createPhaserFx } from "./adapters/render/phaser/phaser-fx
 import { createAudio } from "./adapters/audio/synth";
 import { createHighScore } from "./adapters/storage/highscore";
 
-const TICK_MS = 120;
-
 const display = document.getElementById("display") as HTMLCanvasElement;
 const fxCanvas = document.getElementById("fx") as HTMLCanvasElement;
 const state = init("snake-0001");
 const sink = createSink();
 const fb = createFramebuffer();
-const fruit: FruitKind = "apple";
+let fruit: FruitKind = foodForLevel(state.level);
+let firstTickAt = -1;
 
 // Quality: probe once, then let the governor move the tier at runtime.
 const caps = probeCapabilities(document, navigator);
@@ -143,10 +143,12 @@ let frameCursor = 0;
 let frameCount = 0;
 
 const loop = createLoop({
-  tickMs: () => TICK_MS,
+  tickMs: () => tickMsForLevel(state.level),
   onTick() {
     resetSink(sink);
     step(state, sink);
+    if (firstTickAt < 0 && state.tick >= 1) firstTickAt = performance.now();
+    fruit = foodForLevel(state.level);
     dispatchEffects();
   },
   onFrame(alpha, frameMs) {
@@ -275,6 +277,9 @@ const debug = {
   frameWork: () => Array.from(frameWork.subarray(0, Math.min(frameCount, frameWork.length))),
   highscore: () => highscore.get(),
   frameCount: () => frameCount,
+  /** ms from navigation start to the first simulation tick. */
+  tti: () => firstTickAt,
+  combo: () => state.combo,
   palette: () => ({ ...BASE_PALETTE }),
   build: typeof __SNAKE_BUILD__ === "string" ? __SNAKE_BUILD__ : "dev"
 };
