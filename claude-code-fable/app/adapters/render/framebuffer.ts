@@ -1,6 +1,7 @@
 import {
   type State, CELL_PX, FB_W, FB_H, GRID_W, GRID_H, cellX, cellY
 } from "../../domain/types";
+import { walkFromCell } from "./snake-walk";
 
 /**
  * The 2D content renderer: a 256x240 offscreen canvas drawn with integer
@@ -96,6 +97,8 @@ export interface SceneOptions {
   fruit: FruitKind;
   /** Draw the background grid dots. */
   grid: boolean;
+  /** The last tick grew the body (the tail holds still while gliding). */
+  grew?: boolean;
 }
 
 const DEFAULT_OPTS: SceneOptions = { fruit: "apple", grid: true };
@@ -178,14 +181,18 @@ export function drawScene(ctx: PixelCtx, s: State, alpha: number, p: Palette, op
 
   drawFruit(ctx, s.foodX * CELL_PX, s.foodY * CELL_PX, opts.fruit, p);
 
+  // Smooth walk: every segment glides by alpha; a dead snake snaps to cells.
+  const a = s.phase === "gameover" ? 1 : alpha;
+  const grew = opts.grew === true;
   for (let i = s.bodyLen - 1; i >= 1; i--) {
-    const c = s.body[i]!;
-    drawBlock(ctx, cellX(c) * CELL_PX, cellY(c) * CELL_PX, p.body, p.bodyShade);
+    walkFromCell(s.body, s.bodyLen, i, a, grew, walk);
+    drawBlock(ctx, Math.round(walk.x * CELL_PX), Math.round(walk.y * CELL_PX), p.body, p.bodyShade);
   }
   headPixel(s, alpha, scratch);
   drawHead(ctx, scratch.x, scratch.y, s.dir, p);
 }
 const scratch = { x: 0, y: 0 };
+const walk = { x: 0, y: 0 };
 
 /** Integer-scale fit of the framebuffer into a css-pixel viewport. */
 export interface Fit {

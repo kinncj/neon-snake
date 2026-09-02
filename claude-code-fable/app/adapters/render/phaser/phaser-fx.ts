@@ -3,6 +3,7 @@ import { type State, CELL_PX, GRID_W, GRID_H, cellX, cellY, CAUSE_WALL, DIR_DX, 
 import type { Fit, Palette, FruitKind } from "../framebuffer";
 import type { Tier } from "../../../runtime/quality";
 import { type Particles, createParticles, burst, update as updateParticles, clear as clearParticles } from "./particles";
+import { walkFromCell, createWalkTracker, trackGrowth } from "../snake-walk";
 
 type Phaser = typeof PhaserNS;
 
@@ -34,6 +35,8 @@ export interface FxLayer {
   sample(x: number, y: number): number[];
   /** Current glow strength (bloom amount), for tests. */
   bloom(): number;
+  /** FX bookkeeping for tests: live particles, live shockwaves, flash side, dissolve progress. */
+  stats(): { particles: number; waves: number; flashDir: number; dissolve: number; particleDrift: { vx: number; vy: number; gravity: number } };
   /** Simulate a WebGL context loss (tests). */
   loseContext(): void;
   destroy(): void;
@@ -113,6 +116,8 @@ export async function createPhaserFx(canvas: HTMLCanvasElement, initialFit: Fit,
   let dead = false;
   let lastTick = -1;
   let lastTime = -1;
+  const walker = createWalkTracker();
+  const walk = { x: 0, y: 0 };
 
   const px = (cx: number) => fit.dx + cx * CELL_PX * fit.scale;
   const py = (cy: number) => fit.dy + cy * CELL_PX * fit.scale;
@@ -267,11 +272,13 @@ export async function createPhaserFx(canvas: HTMLCanvasElement, initialFit: Fit,
       const shade = hex(p.bodyShade);
       const head = hex(p.head);
       const accent = hex(p.accent);
-      // Body blocks, tail first so the head lands on top.
+      // Body blocks glide (smooth walk), tail first so the head lands on top.
+      const grew = trackGrowth(walker, s);
+      const a = s.phase === "gameover" ? 1 : alpha;
       for (let i = s.bodyLen - 1; i >= 1; i--) {
-        const c = s.body[i]!;
-        const x = px(cellX(c));
-        const y = py(cellY(c));
+        walkFromCell(s.body, s.bodyLen, i, a, grew, walk);
+        const x = Math.round(px(walk.x));
+        const y = Math.round(py(walk.y));
         const fade = 1 - (i / s.bodyLen) * 0.35;
         g.fillStyle(accent, 0.10 * fade);
         g.fillRoundedRect(x - sc, y - sc, cell + sc * 2, cell + sc * 2, sc * 2);
@@ -521,6 +528,28 @@ export async function createPhaserFx(canvas: HTMLCanvasElement, initialFit: Fit,
     bloom() {
       const sc = scene();
       return sc && sc.glow ? sc.glow.outerStrength : 0;
+    },
+    stats() {
+      let waves = 0;
+      for (let i = 0; i < MAX_SHOCKWAVES; i++) if (waveAge[i]! < waveLife[i]!) waves++;
+      let vx = 0;
+      let vy = 0;
+      let g = 0;
+      let n = 0;
+      for (let i = 0; i < particles.cap; i++) {
+        if (particles.life[i]! <= 0) continue;
+        vx += particles.vx[i]!;
+        vy += particles.vy[i]!;
+        g += particles.gravity[i]!;
+        n++;
+      }
+      return {
+        particles: particles.alive,
+        waves,
+        flashDir: flashAge < 220 ? flashDir : -1,
+        dissolve: dead ? Math.min(1, dissolveAge / 900) : 0,
+        particleDrift: n > 0 ? { vx: vx / n, vy: vy / n, gravity: g / n } : { vx: 0, vy: 0, gravity: 0 }
+      };
     },
     loseContext() {
       const gl = canvas.getContext("webgl2") as WebGL2RenderingContext | null;

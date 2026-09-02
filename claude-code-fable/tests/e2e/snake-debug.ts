@@ -27,7 +27,11 @@ export interface SnakeDebug {
   autoTier(): string;
   setTier(t: string | null): void;
   caps(): { webgl2: boolean; maxTextureSize: number; hardwareConcurrency: number };
-  fx(): { present: boolean; loading: boolean; failed: boolean; alive: boolean; frames: number; drawCount: number; bloom: number };
+  fx(): {
+    present: boolean; loading: boolean; failed: boolean; alive: boolean; frames: number; drawCount: number; bloom: number;
+    watchdogTrips: number; particles: number; waves: number; flashDir: number; dissolve: number;
+    particleDrift: { vx: number; vy: number; gravity: number };
+  };
   loseContext(): void;
   audio(): { enabled: boolean; contextCreated: boolean; contextState: string; muted: boolean; lastSfx: string; voiceSum: number; song: string; history: string[] };
   setDpad(v: boolean): void;

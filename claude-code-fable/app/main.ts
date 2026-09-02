@@ -11,6 +11,7 @@ import { createLoop } from "./runtime/loop";
 import { type Tier, createGovernor, probeCapabilities, tierForCapabilities, prefersReducedMotion } from "./runtime/quality";
 import { createFramebuffer, type FruitKind } from "./adapters/render/framebuffer";
 import { createThemeState, updateTheme, settled as themeSettled } from "./adapters/render/theme";
+import { createWalkTracker, trackGrowth } from "./adapters/render/snake-walk";
 import { createIntentQueue } from "./adapters/input/queue";
 import { attachKeyboard } from "./adapters/input/keyboard";
 import { createGamepadPoller } from "./adapters/input/gamepad";
@@ -37,6 +38,8 @@ let firstTickAt = -1;
 // Presentation owns colour: one live palette re-tinted from the level.
 const theme = createThemeState(state.level);
 let lastAccent = "";
+const walker = createWalkTracker();
+const sceneOpts = { fruit: "apple" as FruitKind, grid: true, grew: false };
 
 // Quality: probe once, then let the governor move the tier at runtime.
 const caps = probeCapabilities(document, navigator);
@@ -181,6 +184,37 @@ function syncTier(): void {
   if (fx) fx.setTier(t);
 }
 
+// Black-frame watchdog: if the engine is supposed to be drawing but its
+// canvas stays blank (context lost, driver hiccup), fall back to the 2D
+// path and retry the engine later. Sampled once a second, never per frame.
+let blankFrames = 0;
+let watchdogTrips = 0;
+let retryAt = 0;
+function watchdog(now: number): void {
+  if (!fx || !wantsEngine(appliedTier as Tier)) {
+    if (fxFailed && retryAt > 0 && now >= retryAt && caps.webgl2) {
+      // Give the engine another chance after a cool-down.
+      fxFailed = false;
+      retryAt = 0;
+      governor.pin(null);
+    }
+    return;
+  }
+  const c = debug.cellPixel(2, 2);
+  const px = fx.sample(c[0]!, c[1]!);
+  const blank = px[3] === 0 || !fx.alive();
+  blankFrames = blank ? blankFrames + 1 : 0;
+  if (blankFrames >= 3) {
+    blankFrames = 0;
+    watchdogTrips++;
+    fxFailed = true;
+    retryAt = now + 10_000;
+    governor.pin("low");
+    syncTier();
+  }
+}
+window.setInterval(() => watchdog(performance.now()), 1000);
+
 function resize(): void {
   fb.resize(display, window.devicePixelRatio || 1);
   if (fx) fx.resize(fb.fit);
@@ -236,7 +270,9 @@ const loop = createLoop({
       hud.setAccent(palette.accent);
       document.documentElement.style.setProperty("--accent", palette.accent);
     }
-    fb.draw(state, alpha, palette, { fruit, grid: true });
+    sceneOpts.fruit = fruit;
+    sceneOpts.grew = trackGrowth(walker, state);
+    fb.draw(state, alpha, palette, sceneOpts);
     fb.composite(display, "#000000");
     if (fx) guarded(() => fx!.render(state, alpha, palette, fruit));
     frameTimes[frameCursor] = frameMs;
@@ -320,7 +356,9 @@ const debug = {
     alive: fx ? fx.alive() : false,
     frames: fx ? fx.frames() : 0,
     drawCount: fx ? fx.drawCount() : 0,
-    bloom: fx ? fx.bloom() : 0
+    bloom: fx ? fx.bloom() : 0,
+    watchdogTrips,
+    ...(fx ? fx.stats() : { particles: 0, waves: 0, flashDir: -1, dissolve: 0, particleDrift: { vx: 0, vy: 0, gravity: 0 } })
   }),
   loseContext: () => fx?.loseContext(),
   audio: () => ({
