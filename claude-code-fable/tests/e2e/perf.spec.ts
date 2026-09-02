@@ -10,7 +10,9 @@ test.skip(({ browserName }) => browserName !== "chromium", "CPU throttling needs
 
 test("time to interactive: the first tick lands within 1.5 s of navigation start", async ({ page }) => {
   await page.goto("/");
-  await page.waitForFunction(() => typeof window.__snake !== "undefined" && window.__snake.tti() >= 0);
+  await page.waitForFunction(() => typeof window.__snake !== "undefined");
+  await page.evaluate(() => window.__snake.start());
+  await page.waitForFunction(() => window.__snake.tti() >= 0);
   // Measured inside the page (performance.now() is relative to navigation
   // start), so driver round-trips and the preview server are excluded.
   const tti = await page.evaluate(() => window.__snake.tti());

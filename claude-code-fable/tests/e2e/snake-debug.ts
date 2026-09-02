@@ -39,6 +39,9 @@ export interface SnakeDebug {
   setLocale(l: string): void;
   frameCount(): number;
   tti(): number;
+  start(): void;
+  uiMode(): string;
+  addScore(n: number): void;
   combo(): number;
   palette(): Record<string, string>;
   build: string;
@@ -50,8 +53,11 @@ declare global {
   }
 }
 
+/** Waits for the app, leaves the title screen, and waits for the first tick. */
 export async function ready(page: Page): Promise<void> {
-  await page.waitForFunction(() => typeof window.__snake !== "undefined" && window.__snake.state().tick >= 0);
+  await page.waitForFunction(() => typeof window.__snake !== "undefined");
+  await page.evaluate(() => window.__snake.start());
+  await page.waitForFunction(() => window.__snake.state().tick >= 1);
 }
 
 export async function snakeState(page: Page) {

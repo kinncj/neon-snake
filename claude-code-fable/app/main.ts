@@ -4,7 +4,7 @@ import { hash } from "./domain/hash";
 import { parseLog, replay } from "./domain/replay";
 import {
   type State, createSink, resetSink, effectAt, packCell, cellX, cellY,
-  EFFECT_ATE, EFFECT_DIED, EFFECT_LEVELUP, GRID_W, GRID_H, CELL_PX
+  EFFECT_ATE, EFFECT_DIED, EFFECT_LEVELUP, GRID_W, GRID_H, CELL_PX, CAUSE_WALL, intentKind
 } from "./domain/types";
 import { tickMsForLevel, foodForLevel } from "./domain/levels";
 import { createLoop } from "./runtime/loop";
@@ -18,6 +18,8 @@ import { type FxLayer, createPhaserFx } from "./adapters/render/phaser/phaser-fx
 import { createAudio } from "./adapters/audio/synth";
 import { createHighScore } from "./adapters/storage/highscore";
 import { type Locale, detectLocale, setLocale, getLocale, bindDom } from "./adapters/i18n";
+import { createHud } from "./adapters/ui/hud";
+import { type UiMode, createOverlays } from "./adapters/ui/overlays";
 
 // Locale: `?lang=` wins, then the browser's languages, then English.
 setLocale(detectLocale(new URLSearchParams(window.location.search).get("lang"), navigator.languages ?? [navigator.language]));
@@ -43,10 +45,6 @@ attachTouch(display, queue);
 const dpad = createDpad(queue);
 document.body.appendChild(dpad.root);
 bindDom(document);
-
-function drainIntents(): void {
-  for (let i = queue.shift(); i >= 0; i = queue.shift()) apply(state, i);
-}
 
 // Audio: the engine (and its AudioContext) is created on the first gesture.
 let storage: Storage | null = null;
@@ -87,6 +85,46 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") audio.suspend();
   else audio.resume();
 });
+
+// UI: the title screen holds the simulation until the first move.
+const hud = createHud(document.getElementById("hud") as HTMLElement);
+const overlays = createOverlays(document.getElementById("overlay") as HTMLElement);
+overlays.setTouch(window.matchMedia("(pointer: coarse)").matches);
+let started = false;
+let lastCause: "wall" | "self" | null = null;
+let newBest = false;
+
+function uiMode(): UiMode {
+  if (!started) return "title";
+  if (state.phase === "paused") return "paused";
+  if (state.phase === "gameover") return "gameover";
+  return "playing";
+}
+
+function syncUi(): void {
+  const mode = uiMode();
+  if (mode !== overlays.mode()) {
+    overlays.setMode(mode, mode === "gameover" ? { score: state.score, best: highscore.get(), newBest, cause: lastCause } : undefined);
+  }
+  hud.update(state, highscore.get());
+}
+
+function drainIntents(): void {
+  for (let i = queue.shift(); i >= 0; i = queue.shift()) {
+    const kind = intentKind(i);
+    if (!started) {
+      // Any turn or restart starts the run; pause is meaningless on the title.
+      if (kind === "pause") continue;
+      started = true;
+      loop.resetAccumulator();
+    }
+    if (kind === "restart") {
+      lastCause = null;
+      newBest = false;
+    }
+    apply(state, i);
+  }
+}
 
 // The engine layer is created lazily the first time a tier needs it and is
 // put to sleep (ticker paused, canvas hidden) whenever the tier drops.
@@ -138,7 +176,12 @@ function dispatchEffects(): void {
       fx.onEffect(kind, sink.x[slot]!, sink.y[slot]!, sink.arg[slot]!, state);
     }
     audio.onEffect(kind, sink.arg[slot]!, state.combo);
-    if (kind === EFFECT_DIED) highscore.submit(state.score);
+    if (kind === EFFECT_ATE) hud.popup(sink.arg[slot]!, sink.x[slot]!, sink.y[slot]!, fb.fit, window.devicePixelRatio || 1);
+    if (kind === EFFECT_LEVELUP) hud.banner(sink.arg[slot]!);
+    if (kind === EFFECT_DIED) {
+      lastCause = sink.arg[slot] === CAUSE_WALL ? "wall" : "self";
+      newBest = highscore.submit(state.score);
+    }
   }
 }
 
@@ -150,6 +193,7 @@ let frameCount = 0;
 const loop = createLoop({
   tickMs: () => tickMsForLevel(state.level),
   onTick() {
+    if (!started) return;
     resetSink(sink);
     step(state, sink);
     if (firstTickAt < 0 && state.tick >= 1) firstTickAt = performance.now();
@@ -162,6 +206,7 @@ const loop = createLoop({
     syncTier();
     gamepad.poll();
     drainIntents();
+    syncUi();
     fb.draw(state, alpha, BASE_PALETTE, { fruit, grid: true });
     fb.composite(display, "#000000");
     if (fx) fx.render(state, alpha, BASE_PALETTE, fruit);
@@ -284,8 +329,20 @@ const debug = {
   locale: () => getLocale(),
   setLocale: (l: Locale) => setLocale(l),
   frameCount: () => frameCount,
-  /** ms from navigation start to the first simulation tick. */
+  /** ms from navigation start to the first simulation tick (after start()). */
   tti: () => firstTickAt,
+  /** Leaves the title screen without turning (tests). */
+  start: () => {
+    if (!started) {
+      started = true;
+      loop.resetAccumulator();
+    }
+  },
+  uiMode,
+  /** Adds points directly (tests): progression re-derives on the next tick. */
+  addScore: (n: number) => {
+    state.score += n;
+  },
   combo: () => state.combo,
   palette: () => ({ ...BASE_PALETTE }),
   build: typeof __SNAKE_BUILD__ === "string" ? __SNAKE_BUILD__ : "dev"
