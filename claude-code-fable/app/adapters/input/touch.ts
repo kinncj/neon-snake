@@ -105,6 +105,8 @@ export function createDpad(queue: IntentQueue, doc: Document = document): Dpad {
     b.type = "button";
     b.className = "dpad-btn dpad-" + name;
     b.dataset["dir"] = String(dir);
+    b.dataset["i18n"] = "dpad_" + name;
+    b.dataset["i18nAttr"] = "aria-label";
     b.setAttribute("aria-label", name);
     b.textContent = glyph;
     const press = (e: Event): void => {

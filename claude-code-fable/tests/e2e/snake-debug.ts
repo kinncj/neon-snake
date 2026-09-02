@@ -35,6 +35,8 @@ export interface SnakeDebug {
   frameTimes(): number[];
   frameWork(): number[];
   highscore(): number;
+  locale(): string;
+  setLocale(l: string): void;
   frameCount(): number;
   tti(): number;
   combo(): number;

@@ -8,6 +8,16 @@ import { ready, useTier } from "./snake-debug";
  */
 test.skip(({ browserName }) => browserName !== "chromium", "CPU throttling needs CDP (Chromium)");
 
+test("time to interactive: the first tick lands within 1.5 s of navigation start", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => typeof window.__snake !== "undefined" && window.__snake.tti() >= 0);
+  // Measured inside the page (performance.now() is relative to navigation
+  // start), so driver round-trips and the preview server are excluded.
+  const tti = await page.evaluate(() => window.__snake.tti());
+  expect(tti).toBeGreaterThan(0);
+  expect(tti).toBeLessThan(1500);
+});
+
 test("p95 frame time at low under 4x CPU throttle is under 16.7 ms", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");
@@ -30,6 +40,7 @@ test("p95 frame time at low under 4x CPU throttle is under 16.7 ms", async ({ pa
     return out;
   });
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  await cdp.detach();
   expect(times.length).toBeGreaterThanOrEqual(600);
   // frameWork() is the CPU time of the loop body per frame (tick + draw +
   // composite), which is what the budget governs; the RAF gap itself is
@@ -37,14 +48,4 @@ test("p95 frame time at low under 4x CPU throttle is under 16.7 ms", async ({ pa
   const sorted = times.slice(-600).sort((a, b) => a - b);
   const p95 = sorted[Math.floor(sorted.length * 0.95)]!;
   expect(p95).toBeLessThan(16.7);
-});
-
-test("time to interactive: the first tick lands within 1.5 s of navigation start", async ({ page }) => {
-  await page.goto("/");
-  await page.waitForFunction(() => typeof window.__snake !== "undefined" && window.__snake.tti() >= 0);
-  // Measured inside the page (performance.now() is relative to navigation
-  // start), so driver round-trips and the preview server are excluded.
-  const tti = await page.evaluate(() => window.__snake.tti());
-  expect(tti).toBeGreaterThan(0);
-  expect(tti).toBeLessThan(1500);
 });

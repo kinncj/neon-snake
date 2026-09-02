@@ -17,6 +17,10 @@ import { attachTouch, createDpad } from "./adapters/input/touch";
 import { type FxLayer, createPhaserFx } from "./adapters/render/phaser/phaser-fx";
 import { createAudio } from "./adapters/audio/synth";
 import { createHighScore } from "./adapters/storage/highscore";
+import { type Locale, detectLocale, setLocale, getLocale, bindDom } from "./adapters/i18n";
+
+// Locale: `?lang=` wins, then the browser's languages, then English.
+setLocale(detectLocale(new URLSearchParams(window.location.search).get("lang"), navigator.languages ?? [navigator.language]));
 
 const display = document.getElementById("display") as HTMLCanvasElement;
 const fxCanvas = document.getElementById("fx") as HTMLCanvasElement;
@@ -38,6 +42,7 @@ const gamepad = createGamepadPoller(navigator, queue);
 attachTouch(display, queue);
 const dpad = createDpad(queue);
 document.body.appendChild(dpad.root);
+bindDom(document);
 
 function drainIntents(): void {
   for (let i = queue.shift(); i >= 0; i = queue.shift()) apply(state, i);
@@ -276,6 +281,8 @@ const debug = {
   /** Per-frame CPU work of the loop body (tick + draw + composite), ms. */
   frameWork: () => Array.from(frameWork.subarray(0, Math.min(frameCount, frameWork.length))),
   highscore: () => highscore.get(),
+  locale: () => getLocale(),
+  setLocale: (l: Locale) => setLocale(l),
   frameCount: () => frameCount,
   /** ms from navigation start to the first simulation tick. */
   tti: () => firstTickAt,
