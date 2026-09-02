@@ -1,24 +1,87 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Browser } from "@playwright/test";
+import { ready, fit, sample, snakeState } from "./snake-debug";
 
-test("a black full-viewport canvas that resizes with the window", async ({ page }) => {
-  await page.setViewportSize({ width: 800, height: 600 });
+const FB_W = 256;
+const FB_H = 240;
+
+/** The viewport matrix: css size @ device pixel ratio. */
+const MATRIX: Array<[number, number, number]> = [
+  [320, 480, 1],
+  [375, 667, 2],
+  [800, 600, 1],
+  [1366, 768, 1],
+  [1920, 1080, 1],
+  [2560, 1440, 1],
+  [5120, 1440, 2]
+];
+
+async function openAt(browser: Browser, w: number, h: number, dpr: number) {
+  const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr });
+  const page = await ctx.newPage();
   await page.goto("/");
-  const box = await page.locator("#display").boundingBox();
-  expect(box).not.toBeNull();
-  expect(box!.width).toBe(800);
-  expect(box!.height).toBe(600);
-  const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  expect(bg).toBe("rgb(0, 0, 0)");
+  await ready(page);
+  return { ctx, page };
+}
 
-  await page.setViewportSize({ width: 1200, height: 700 });
-  await page.waitForTimeout(50);
-  const box2 = await page.locator("#display").boundingBox();
-  expect(box2!.width).toBe(1200);
-  expect(box2!.height).toBe(700);
-  const backing = await page.evaluate(() => {
-    const c = document.getElementById("display") as HTMLCanvasElement;
-    return [c.width, c.height, window.devicePixelRatio];
+const isBg = (rgba: number[]) => rgba[0]! < 40 && rgba[1]! < 40 && rgba[2]! < 60;
+
+for (const [w, h, dpr] of MATRIX) {
+  test(`full field at ${w}x${h}@${dpr}: integer scale, 1:1 cells, no clipping`, async ({ browser }) => {
+    const { ctx, page } = await openAt(browser, w, h, dpr);
+    const f = await fit(page);
+    expect(f.backingW).toBe(Math.round(w * dpr));
+    expect(f.backingH).toBe(Math.round(h * dpr));
+    expect(f.scale).toBe(Math.max(1, Math.floor(Math.min(f.backingW / FB_W, f.backingH / FB_H))));
+    expect(f.w).toBe(FB_W * f.scale);
+    expect(f.h).toBe(FB_H * f.scale);
+    expect(f.dx).toBeGreaterThanOrEqual(0);
+    expect(f.dy).toBeGreaterThanOrEqual(0);
+    expect(f.dx + f.w).toBeLessThanOrEqual(f.backingW);
+    expect(f.dy + f.h).toBeLessThanOrEqual(f.backingH);
+
+    // The field's own background is drawn at all four corners of the field,
+    // and the letterbox outside it is pure black.
+    await page.waitForTimeout(80);
+    const inset = 2;
+    for (const [x, y] of [
+      [f.dx + inset, f.dy + inset],
+      [f.dx + f.w - inset - 1, f.dy + inset],
+      [f.dx + inset, f.dy + f.h - inset - 1],
+      [f.dx + f.w - inset - 1, f.dy + f.h - inset - 1]
+    ]) {
+      const c = await sample(page, x!, y!);
+      expect(isBg(c)).toBe(true);
+      expect(c[0]! + c[1]! + c[2]!).toBeGreaterThan(0); // field bg is not the letterbox black
+    }
+    if (f.dx > 0) {
+      const c = await sample(page, Math.floor(f.dx / 2), Math.floor(f.backingH / 2));
+      expect(c.slice(0, 3)).toEqual([0, 0, 0]);
+    }
+    if (f.dy > 0) {
+      const c = await sample(page, Math.floor(f.backingW / 2), Math.floor(f.dy / 2));
+      expect(c.slice(0, 3)).toEqual([0, 0, 0]);
+    }
+    await ctx.close();
   });
-  expect(backing[0]).toBe(Math.round(1200 * backing[2]!));
-  expect(backing[1]).toBe(Math.round(700 * backing[2]!));
+}
+
+test("mid-session resize keeps the simulation state unchanged", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/");
+  await ready(page);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.__snake.freeze());
+  const before = await page.evaluate(() => window.__snake.hash());
+  const tickBefore = (await snakeState(page)).tick;
+  expect(tickBefore).toBeGreaterThan(0);
+  await page.setViewportSize({ width: 640, height: 900 });
+  await page.waitForTimeout(50);
+  expect(await page.evaluate(() => window.__snake.hash())).toBe(before);
+  expect((await snakeState(page)).tick).toBe(tickBefore);
+  const f = await fit(page);
+  expect(f.backingW).toBe(640);
+  expect(f.scale).toBe(2);
+  await page.evaluate(() => window.__snake.unfreeze());
+  await page.waitForTimeout(200);
+  expect((await snakeState(page)).tick).toBeGreaterThan(tickBefore);
 });
