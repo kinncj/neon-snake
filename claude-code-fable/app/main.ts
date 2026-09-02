@@ -1,9 +1,12 @@
 import "./style.css";
-import { init, step } from "./domain/step";
+import { init, step, apply } from "./domain/step";
 import { hash } from "./domain/hash";
 import { createSink, resetSink } from "./domain/types";
 import { createLoop } from "./runtime/loop";
 import { createFramebuffer, BASE_PALETTE } from "./adapters/render/framebuffer";
+import { createIntentQueue } from "./adapters/input/queue";
+import { attachKeyboard } from "./adapters/input/keyboard";
+import { createGamepadPoller } from "./adapters/input/gamepad";
 
 const TICK_MS = 120;
 
@@ -11,6 +14,15 @@ const display = document.getElementById("display") as HTMLCanvasElement;
 const state = init("snake-0001");
 const sink = createSink();
 const fb = createFramebuffer();
+
+// Input: every adapter pushes into one queue; the loop drains it per frame.
+const queue = createIntentQueue();
+attachKeyboard(window, queue);
+const gamepad = createGamepadPoller(navigator, queue);
+
+function drainIntents(): void {
+  for (let i = queue.shift(); i >= 0; i = queue.shift()) apply(state, i);
+}
 
 function resize(): void {
   fb.resize(display, window.devicePixelRatio || 1);
@@ -25,6 +37,8 @@ const loop = createLoop({
     step(state, sink);
   },
   onFrame(alpha) {
+    gamepad.poll();
+    drainIntents();
     fb.draw(state, alpha, BASE_PALETTE);
     fb.composite(display, "#000000");
   }
