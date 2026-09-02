@@ -51,7 +51,10 @@ const GLOW_BASE = 1.6;
 const GLOW_PULSE = 5.5;
 const GLOW_DECAY_MS = 400;
 const SCANLINE_ALPHA = 0.16;
-const VIGNETTE_STRENGTH = 0.9;
+// Softened in P4.2: a strong vignette darkened the playfield; now it only
+// touches the corners so every cell stays readable.
+const VIGNETTE_STRENGTH = 0.35;
+const VIGNETTE_RADIUS = 0.95;
 const FLICKER_PERIOD_MS = 4200;
 
 function hex(colour: string): number {
@@ -161,7 +164,7 @@ export async function createPhaserFx(canvas: HTMLCanvasElement, initialFit: Fit,
         this.glow = this.snake.filters!.internal.addGlow(0x00e5ff, GLOW_BASE, 0, 1, false, 0.1, 10);
         this.food.enableFilters();
         this.foodGlow = this.food.filters!.internal.addGlow(0xff2e88, 2.5, 0, 1, false, 0.1, 8);
-        this.vignette = this.cameras.main.filters.internal.addVignette(0.5, 0.5, 0.78, VIGNETTE_STRENGTH);
+        this.vignette = this.cameras.main.filters.internal.addVignette(0.5, 0.5, VIGNETTE_RADIUS, VIGNETTE_STRENGTH);
       } catch {
         this.glow = null;
         this.foodGlow = null;
@@ -248,8 +251,8 @@ export async function createPhaserFx(canvas: HTMLCanvasElement, initialFit: Fit,
       const x0 = px(s.foodX);
       const y0 = py(s.foodY);
       const cell = CELL_PX * sc;
-      g.fillStyle(hex(p.fruit), 0.18);
-      g.fillCircle(x0 + cell / 2, y0 + cell / 2, cell * 0.95);
+      g.fillStyle(hex(p.fruit), 0.12);
+      g.fillCircle(x0 + cell / 2, y0 + cell / 2, cell * 0.8);
       const rows = FRUIT_BITS[fruit];
       for (let y = 0; y < CELL_PX; y++) {
         const row = rows[y]!;

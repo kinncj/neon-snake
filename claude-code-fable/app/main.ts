@@ -22,11 +22,15 @@ import { createHighScore } from "./adapters/storage/highscore";
 import { type Locale, detectLocale, setLocale, getLocale, bindDom } from "./adapters/i18n";
 import { createHud } from "./adapters/ui/hud";
 import { type UiMode, createOverlays } from "./adapters/ui/overlays";
+import { createSettingsPanel } from "./adapters/ui/settings";
+import { createFpsMeter } from "./adapters/ui/fps";
 
 // Locale: `?lang=` wins, then the browser's languages, then English.
 setLocale(detectLocale(new URLSearchParams(window.location.search).get("lang"), navigator.languages ?? [navigator.language]));
 
 const display = document.getElementById("display") as HTMLCanvasElement;
+const frameEl = document.getElementById("tv-frame");
+if (frameEl) frameEl.style.backgroundImage = `url("${new URL("crt-tv.svg", document.baseURI).href}")`;
 const buildEl = document.getElementById("build");
 if (buildEl) buildEl.textContent = "build " + (typeof __SNAKE_BUILD__ === "string" ? __SNAKE_BUILD__ : "dev");
 const fxCanvas = document.getElementById("fx") as HTMLCanvasElement;
@@ -48,7 +52,8 @@ governor.setForcedReduced(prefersReducedMotion(window));
 
 // Input: every adapter pushes into one queue; the loop drains it per frame.
 const queue = createIntentQueue();
-attachKeyboard(window, queue);
+attachKeyboard(window, queue, { blocked: () => settingsOpen });
+let settingsOpen = false;
 const gamepad = createGamepadPoller(navigator, queue);
 attachTouch(display, queue);
 const dpad = createDpad(queue);
@@ -72,7 +77,9 @@ function reflectMute(): void {
 function toggleMute(): void {
   audio.setMuted(!audio.muted());
   reflectMute();
+  settingsSync();
 }
+let settingsSync = (): void => {};
 muteBtn.addEventListener("click", () => {
   toggleMute();
   muteBtn.blur();
@@ -147,6 +154,40 @@ function drainIntents(): void {
     apply(state, i);
     if (kind === "restart") guarded(() => audio.playSong(state.level));
   }
+}
+
+// Settings panel + FPS meter. The panel owns the d-pad's visibility and the
+// Effects toggle, and mirrors the mute state.
+const fps = createFpsMeter();
+(document.getElementById("screen") as HTMLElement).appendChild(fps.root);
+const settings = createSettingsPanel(document.getElementById("ui-top") as HTMLElement, {
+  storage,
+  onOpen() {
+    settingsOpen = true;
+    if (started && state.phase === "playing") apply(state, 4 /* pause */);
+  },
+  onClose() {
+    settingsOpen = false;
+  },
+  onChange(key, value) {
+    if (key === "effects") governor.setForcedReduced(!value || prefersReducedMotion(window));
+    else if (key === "sound") {
+      audio.setMuted(!value);
+      reflectMute();
+    } else if (key === "dpad") dpad.setVisible(value);
+    else if (key === "fps") fps.setVisible(value);
+  }
+});
+settingsSync = () => settings.set("sound", !audio.muted());
+{
+  const s = settings.get();
+  governor.setForcedReduced(!s.effects || prefersReducedMotion(window));
+  if (!s.sound !== audio.muted()) {
+    audio.setMuted(!s.sound);
+    reflectMute();
+  }
+  dpad.setVisible(s.dpad);
+  fps.setVisible(s.fps);
 }
 
 // The engine layer is created lazily the first time a tier needs it and is
@@ -277,6 +318,7 @@ const loop = createLoop({
     if (fx) guarded(() => fx!.render(state, alpha, palette, fruit));
     frameTimes[frameCursor] = frameMs;
     frameWork[frameCursor] = performance.now() - t0;
+    fps.sample(frameMs, frameWork[frameCursor]!, governor.tier());
     frameCursor = (frameCursor + 1) % frameTimes.length;
     frameCount++;
   }
@@ -371,7 +413,8 @@ const debug = {
     song: audio.song(),
     history: audio.history()
   }),
-  setDpad: (v: boolean) => dpad.setVisible(v),
+  setDpad: (v: boolean) => settings.set("dpad", v),
+  settings: () => settings.get(),
   dpadVisible: () => dpad.isVisible(),
   /** RGBA of the display canvas (the 2D composite) at a backing-store pixel. */
   sample(x: number, y: number): number[] {

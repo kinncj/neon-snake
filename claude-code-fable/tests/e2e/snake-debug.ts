@@ -35,6 +35,7 @@ export interface SnakeDebug {
   loseContext(): void;
   audio(): { enabled: boolean; contextCreated: boolean; contextState: string; muted: boolean; lastSfx: string; voiceSum: number; song: string; history: string[] };
   setDpad(v: boolean): void;
+  settings(): { effects: boolean; sound: boolean; dpad: boolean; fps: boolean };
   dpadVisible(): boolean;
   replay(logText: string, ticks: number, seed?: string): string;
   frameTimes(): number[];

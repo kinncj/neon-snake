@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 800" preserveAspectRatio="none" width="1000" height="800">
+  <!--
+    NEON-SNAKE CRT television bezel. The screen well (x 45..955, y 45..740)
+    is fully transparent so the game shows through the glass; the frame is
+    stretched to the viewport (preserveAspectRatio none) and the CSS insets
+    of #screen match those percentages (4.5vw / 4.5vh / 7.5vh).
+  -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2d3a"/>
+      <stop offset="0.5" stop-color="#1c1d27"/>
+      <stop offset="1" stop-color="#121319"/>
+    </linearGradient>
+    <linearGradient id="lip" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a3d4f"/>
+      <stop offset="1" stop-color="#0a0b10"/>
+    </linearGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0d0e14"/>
+      <stop offset="0.5" stop-color="#1a1c26"/>
+      <stop offset="1" stop-color="#0d0e14"/>
+    </linearGradient>
+    <radialGradient id="knob" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#4a4d5e"/>
+      <stop offset="1" stop-color="#101117"/>
+    </radialGradient>
+    <mask id="well">
+      <rect x="0" y="0" width="1000" height="800" fill="#fff"/>
+      <rect x="45" y="45" width="910" height="695" rx="14" ry="14" fill="#000"/>
+    </mask>
+    <pattern id="vents" x="0" y="0" width="6" height="8" patternUnits="userSpaceOnUse">
+      <rect x="0" y="0" width="2.4" height="8" fill="#07080b"/>
+      <rect x="2.4" y="0" width="1" height="8" fill="#2a2c38" opacity="0.6"/>
+    </pattern>
+  </defs>
+
+  <!-- plastic body, with the screen well cut out -->
+  <g mask="url(#well)">
+    <rect x="0" y="0" width="1000" height="800" rx="26" ry="26" fill="url(#body)"/>
+    <!-- subtle plastic grain lines -->
+    <g opacity="0.07" stroke="#ffffff" stroke-width="1">
+      <line x1="0" y1="20" x2="1000" y2="20"/>
+      <line x1="0" y1="780" x2="1000" y2="780"/>
+      <line x1="20" y1="0" x2="20" y2="800"/>
+      <line x1="980" y1="0" x2="980" y2="800"/>
+    </g>
+    <!-- recessed lip around the glass -->
+    <rect x="36" y="36" width="928" height="713" rx="20" ry="20" fill="none" stroke="url(#lip)" stroke-width="12"/>
+    <rect x="43" y="43" width="914" height="699" rx="15" ry="15" fill="none" stroke="#000" stroke-width="4" opacity="0.9"/>
+  </g>
+
+  <!-- inner glass shadow (drawn over the transparent well edge, very soft) -->
+  <rect x="45" y="45" width="910" height="695" rx="14" ry="14" fill="none" stroke="#000" stroke-width="10" opacity="0.35"/>
+
+  <!-- bottom control strip -->
+  <rect x="45" y="748" width="910" height="40" rx="6" ry="6" fill="url(#plate)"/>
+  <!-- speaker vents, left -->
+  <rect x="70" y="755" width="150" height="26" rx="4" fill="url(#vents)"/>
+  <rect x="70" y="755" width="150" height="26" rx="4" fill="none" stroke="#0a0b10" stroke-width="1.5"/>
+  <!-- brand plate -->
+  <rect x="400" y="753" width="200" height="30" rx="5" fill="#0a0b10" stroke="#2f3243" stroke-width="1.5"/>
+  <text x="500" y="774" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" font-weight="700" letter-spacing="4" fill="#9fb3d9">NEON-SNAKE</text>
+  <!-- knobs, right -->
+  <circle cx="800" cy="768" r="11" fill="url(#knob)" stroke="#05060a" stroke-width="1.5"/>
+  <rect x="799" y="758" width="2" height="8" fill="#c9ced9" opacity="0.7"/>
+  <circle cx="840" cy="768" r="11" fill="url(#knob)" stroke="#05060a" stroke-width="1.5"/>
+  <rect x="839" y="758" width="2" height="8" fill="#c9ced9" opacity="0.7"/>
+  <circle cx="880" cy="768" r="7" fill="url(#knob)" stroke="#05060a" stroke-width="1.5"/>
+  <!-- channel labels -->
+  <g font-family="ui-monospace, Menlo, Consolas, monospace" font-size="8" fill="#5c6278" text-anchor="middle">
+    <text x="800" y="790">VOL</text>
+    <text x="840" y="790">TUNE</text>
+    <text x="880" y="790">PWR</text>
+  </g>
+  <!-- screws -->
+  <g fill="#3a3d4a" stroke="#0a0b10" stroke-width="1">
+    <circle cx="16" cy="16" r="4"/><circle cx="984" cy="16" r="4"/>
+    <circle cx="16" cy="784" r="4"/><circle cx="984" cy="784" r="4"/>
+  </g>
+</svg>

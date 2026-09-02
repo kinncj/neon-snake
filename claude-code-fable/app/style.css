@@ -40,32 +40,26 @@ html, body {
 /* The engine canvas sits over the 2D composite; pointer events fall through. */
 #fx { pointer-events: none; z-index: 2; visibility: hidden; }
 
-/* The bezel: above the glass, below the d-pad and mute, never catches input. */
+/* The bezel: a real SVG sprite (public/crt-tv.svg) stretched to the
+   viewport; its screen well is transparent so the game shows through.
+   Above the glass, below the d-pad and mute; never catches input. The
+   image URL is set from main.ts so it resolves under any base path. */
 #tv-frame {
   position: absolute;
   inset: 0;
   z-index: 40;
   pointer-events: none;
-  border-style: solid;
-  border-color: var(--bezel);
-  border-width: 4.5vh 4.5vw 7.5vh 4.5vw;
-  border-radius: 2vw;
-  box-sizing: border-box;
-  box-shadow:
-    inset 0 0 0 2px var(--bezel-hi),
-    inset 0 0 40px 10px rgba(0, 0, 0, 0.9),
-    0 0 0 1px var(--bezel-lo);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.35)) padding-box;
-  background-clip: padding-box;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  background-position: 0 0;
 }
 #tv-frame::after {
-  /* glass reflection */
+  /* glass reflection inside the well */
   content: "";
   position: absolute;
-  inset: 0;
+  left: 4.5%; right: 4.5%; top: 4.5%; bottom: 7.5%;
   border-radius: 1.2vw / 1.2vh;
-  background: linear-gradient(115deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 35%);
+  background: linear-gradient(115deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 35%);
   pointer-events: none;
 }
 #tv-led {
@@ -245,3 +239,93 @@ html, body {
 .ov-hint { font-size: 12px; color: #9aa4c7; margin-top: 6px; }
 #overlay[data-mode="title"] .ov-body { animation: blink 1.4s steps(2, start) infinite; }
 @keyframes blink { to { visibility: hidden; } }
+
+/* Gear + settings modal */
+#ui-top { position: absolute; top: 12px; right: 60px; z-index: 60; }
+#gear {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  background: rgba(10, 14, 30, 0.6);
+  color: var(--accent);
+  font: 700 20px/1 ui-monospace, monospace;
+  text-shadow: 0 0 8px var(--accent);
+  cursor: pointer;
+}
+#gear:focus-visible { outline: 2px solid #ff2e88; outline-offset: 2px; }
+#settings { position: fixed; inset: 0; z-index: 70; }
+#settings[hidden] { display: none; }
+.settings-backdrop { position: absolute; inset: 0; background: rgba(2, 3, 8, 0.7); }
+.settings-panel {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 300px;
+  max-width: 90vw;
+  padding: 20px 22px 16px;
+  border-radius: 14px;
+  background: #0b0d1a;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--accent) 25%, transparent), 0 20px 60px rgba(0, 0, 0, 0.8);
+  color: #e6e6f0;
+}
+.settings-panel h2 {
+  margin: 0 0 14px;
+  font-size: 15px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 0 10px var(--accent);
+}
+.settings-list { display: flex; flex-direction: column; gap: 8px; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.settings-label { font-size: 14px; }
+.settings-toggle {
+  min-width: 74px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #3a3f5c;
+  background: #141728;
+  color: #9aa4c7;
+  font: 700 12px/1 ui-monospace, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.settings-toggle.on {
+  border-color: var(--accent);
+  color: #0b0d1a;
+  background: var(--accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.settings-toggle:focus-visible, .settings-close:focus-visible { outline: 2px solid #ff2e88; outline-offset: 2px; }
+.settings-close {
+  margin-top: 16px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #3a3f5c;
+  background: #141728;
+  color: #e6e6f0;
+  font: 700 12px/1 ui-monospace, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* FPS meter */
+#fps {
+  position: absolute;
+  left: 12px;
+  bottom: 24px;
+  z-index: 25;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(5, 6, 14, 0.7);
+  color: #9fe8ff;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+#fps[hidden] { display: none; }
