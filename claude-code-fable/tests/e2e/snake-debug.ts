@@ -44,6 +44,7 @@ export interface SnakeDebug {
   addScore(n: number): void;
   combo(): number;
   palette(): Record<string, string>;
+  theme(): { name: string; settled: boolean; bg: string; grid: string; body: string; bodyShade: string; head: string; accent: string };
   build: string;
 }
 

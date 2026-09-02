@@ -9,7 +9,8 @@ import {
 import { tickMsForLevel, foodForLevel } from "./domain/levels";
 import { createLoop } from "./runtime/loop";
 import { type Tier, createGovernor, probeCapabilities, tierForCapabilities, prefersReducedMotion } from "./runtime/quality";
-import { createFramebuffer, BASE_PALETTE, type FruitKind } from "./adapters/render/framebuffer";
+import { createFramebuffer, type FruitKind } from "./adapters/render/framebuffer";
+import { createThemeState, updateTheme, settled as themeSettled } from "./adapters/render/theme";
 import { createIntentQueue } from "./adapters/input/queue";
 import { attachKeyboard } from "./adapters/input/keyboard";
 import { createGamepadPoller } from "./adapters/input/gamepad";
@@ -31,6 +32,9 @@ const sink = createSink();
 const fb = createFramebuffer();
 let fruit: FruitKind = foodForLevel(state.level);
 let firstTickAt = -1;
+// Presentation owns colour: one live palette re-tinted from the level.
+const theme = createThemeState(state.level);
+let lastAccent = "";
 
 // Quality: probe once, then let the governor move the tier at runtime.
 const caps = probeCapabilities(document, navigator);
@@ -207,9 +211,15 @@ const loop = createLoop({
     gamepad.poll();
     drainIntents();
     syncUi();
-    fb.draw(state, alpha, BASE_PALETTE, { fruit, grid: true });
+    const palette = updateTheme(theme, state.level, frameMs);
+    if (palette.accent !== lastAccent) {
+      lastAccent = palette.accent;
+      hud.setAccent(palette.accent);
+      document.documentElement.style.setProperty("--accent", palette.accent);
+    }
+    fb.draw(state, alpha, palette, { fruit, grid: true });
     fb.composite(display, "#000000");
-    if (fx) fx.render(state, alpha, BASE_PALETTE, fruit);
+    if (fx) fx.render(state, alpha, palette, fruit);
     frameTimes[frameCursor] = frameMs;
     frameWork[frameCursor] = performance.now() - t0;
     frameCursor = (frameCursor + 1) % frameTimes.length;
@@ -344,7 +354,8 @@ const debug = {
     state.score += n;
   },
   combo: () => state.combo,
-  palette: () => ({ ...BASE_PALETTE }),
+  palette: () => ({ ...theme.palette }),
+  theme: () => ({ name: theme.current.name, settled: themeSettled(theme), ...theme.palette }),
   build: typeof __SNAKE_BUILD__ === "string" ? __SNAKE_BUILD__ : "dev"
 };
 (window as unknown as { __snake: typeof debug }).__snake = debug;
