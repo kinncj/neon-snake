@@ -12,6 +12,12 @@ import { createDpad, createSwipe } from './adapters/input/touch'
 import { Framebuffer, type Layout } from './adapters/render/framebuffer'
 import { themeForLevel } from './adapters/render/theme'
 import { FixedTimestepLoop } from './runtime/loop'
+import {
+  QualityGovernor,
+  startingTier,
+  type QualityProbe,
+  type Tier,
+} from './runtime/quality'
 
 const SEED = 'snake-0001'
 
@@ -56,11 +62,45 @@ createSwipe(pushIntent, canvas)
 const dpad = createDpad(pushIntent) // hidden by default; the settings panel owns visibility
 document.body.appendChild(dpad.root)
 
+// Quality governor: probe the hardware once, pick a starting tier, then let the
+// rolling frame-time median move it. `reduced` (OS or user Effects-off) is a
+// hard override the governor never walks out of.
+function probeQuality(): QualityProbe {
+  let webgl2 = false
+  let maxTextureSize = 0
+  try {
+    const probeCanvas = document.createElement('canvas')
+    const gl = probeCanvas.getContext('webgl2')
+    if (gl) {
+      webgl2 = true
+      maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) ?? 0
+      gl.getExtension('WEBGL_lose_context')?.loseContext()
+    }
+  } catch {
+    // no WebGL2 — governor stays capped at low
+  }
+  return {
+    webgl2,
+    maxTextureSize,
+    cores: navigator.hardwareConcurrency ?? 1,
+    prefersReducedMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+  }
+}
+
+const qualityProbe = probeQuality()
+const governor = new QualityGovernor(startingTier(qualityProbe), qualityProbe.webgl2 ? 'ultra' : 'low')
+
 function resize(): void {
   fb.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1)
 }
 
+let lastFrameTime = 0
 function frame(now: number): void {
+  // Feed the governor the real wall-clock frame cost (sim + render).
+  const frameMs = lastFrameTime === 0 ? 0 : now - lastFrameTime
+  lastFrameTime = now
+  if (frameMs > 0) governor.feed(frameMs)
+
   drainIntents()
   loop.tickMs = tickMsForLevel(state.level)
   if (!frozen) currentAlpha = loop.update(now)
@@ -100,6 +140,8 @@ declare global {
       setFrozen(v: boolean): void
       setDpadVisible(v: boolean): void
       dpadVisible(): boolean
+      tier(): Tier
+      setEffectsEnabled(v: boolean): void
     }
   }
 }
@@ -139,5 +181,11 @@ window.__snake = {
   },
   dpadVisible(): boolean {
     return dpad.isVisible()
+  },
+  tier(): Tier {
+    return governor.tier
+  },
+  setEffectsEnabled(v: boolean): void {
+    governor.setEffectsEnabled(v)
   },
 }
