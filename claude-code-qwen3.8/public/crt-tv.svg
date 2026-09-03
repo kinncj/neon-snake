@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 640" preserveAspectRatio="none">
+  <!--
+    The CRT television. Stretched to 100% 100% of the viewport (see #tv-frame in
+    index.html), it is the physical TV: a plastic body that frames the playfield.
+    The screen opening is cut out with even-odd fill and left transparent, so the
+    centred game shows through the glass while the bezel frames it. (#screen in
+    index.html is positioned to exactly fill this opening: left 6% / top 8% /
+    88% x 82% of the viewport.)
+  -->
+  <defs>
+    <linearGradient id="nbody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#48485c"/>
+      <stop offset="0.45" stop-color="#2a2a3a"/>
+      <stop offset="1" stop-color="#14141e"/>
+    </linearGradient>
+    <radialGradient id="nknob" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#5c5c72"/>
+      <stop offset="1" stop-color="#1a1a25"/>
+    </radialGradient>
+  </defs>
+
+  <!-- The plastic body fills the viewport; the screen opening (60,51 - 940,576)
+       is the transparent hole. -->
+  <path fill="url(#nbody)" fill-rule="evenodd"
+    d="M 0 0 H 1000 V 640 H 0 Z M 60 51 H 940 V 576 H 60 Z"/>
+
+  <!-- A soft top-edge plastic highlight (a light bevel, never a darkening). -->
+  <rect x="6" y="5" width="988" height="3" rx="1.5" fill="rgba(255,255,255,0.10)"/>
+
+  <!-- Speaker grille on the bottom bezel. -->
+  <g stroke="rgba(0,0,0,0.5)" stroke-width="4">
+    <line x1="470" y1="592" x2="700" y2="592"/>
+    <line x1="470" y1="603" x2="700" y2="603"/>
+    <line x1="470" y1="614" x2="700" y2="614"/>
+  </g>
+
+  <!-- Two control knobs (bottom-right). -->
+  <circle cx="820" cy="606" r="17" fill="url(#nknob)" stroke="rgba(255,255,255,0.14)" stroke-width="2"/>
+  <circle cx="884" cy="606" r="17" fill="url(#nknob)" stroke="rgba(255,255,255,0.14)" stroke-width="2"/>
+  <line x1="820" y1="606" x2="820" y2="593" stroke="rgba(230,240,255,0.5)" stroke-width="3"/>
+  <line x1="884" y1="606" x2="892" y2="599" stroke="rgba(230,240,255,0.5)" stroke-width="3"/>
+
+  <!-- The NEON SNAKE brand plate (bottom-left). -->
+  <rect x="66" y="590" width="158" height="30" rx="7" fill="#0b0b13" stroke="rgba(120,200,255,0.35)" stroke-width="1.5"/>
+  <text x="145" y="611" text-anchor="middle" font-family="'Courier New', ui-monospace, monospace" font-size="19" font-weight="bold" letter-spacing="3" fill="#7fdcff">NEON SNAKE</text>
+</svg>

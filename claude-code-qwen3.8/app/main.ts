@@ -26,8 +26,10 @@ import { ParticleSystem } from './adapters/render/particles'
 import { fxActive, PhaserFx, type FxTier } from './adapters/render/phaser/phaser-fx'
 import { themeForLevel } from './adapters/render/theme'
 import { createHighscore } from './adapters/storage/highscore'
+import { createFpsMeter } from './adapters/ui/fps'
 import { createHud, type Hud } from './adapters/ui/hud'
 import { createOverlays, type Overlays, type UiMode } from './adapters/ui/overlays'
+import { createSettings } from './adapters/ui/settings'
 import { FixedTimestepLoop } from './runtime/loop'
 import {
   QualityGovernor,
@@ -174,6 +176,44 @@ let lastTier: Tier = governor.tier
 /** GL context loss: drop to low so the FX layer stays off (2D remains visible). */
 function governorLost(): void {
   governor.set('low')
+}
+
+// Settings panel (P4.3): a gear (top-right) opens a pause-on-open modal with the
+// Effects / Sound / D-pad / FPS toggles + a language picker. The four toggles
+// persist to `snake.settings` (Sound routes through the sound handle, which owns
+// `snake.sound`). The FPS meter is fed each frame below. The panel's state is the
+// source of truth, so it is applied to the governor / sound / d-pad / fps meter on
+// load and again through the `apply` callbacks when a toggle flips.
+const fpsMeter = createFpsMeter()
+const settings = createSettings({
+  fps: fpsMeter,
+  getSound: () => sound.soundEnabled(),
+  apply: {
+    effects: (v) => governor.setEffectsEnabled(v),
+    sound: (v) => sound.setEnabled(v),
+    dpad: (v) => dpad.setVisible(v),
+    fps: (v) => fpsMeter.setVisible(v),
+  },
+  // Opening pauses a running game (so the player can't steer into a wall while
+  // reading options); closing resumes it — but only a pause the panel caused, so
+  // a `P`-pause the player made is left alone.
+  onOpen: () => {
+    if (currentUiMode() === 'playing') intentQueue.push({ kind: 'pause' })
+  },
+  onClose: () => {
+    if (currentUiMode() === 'paused') intentQueue.push({ kind: 'pause' })
+  },
+})
+document.body.appendChild(settings.root)
+// Apply the persisted settings to the game on load. Sound is skipped: the sound
+// handle already restored its own `snake.sound` state on load, and the panel's
+// Sound toggle is a live view of it (seeded when the panel opens) — seeding it
+// here would clobber a persisted mute with the settings default.
+{
+  const s = settings.state()
+  governor.setEffectsEnabled(s.effects)
+  dpad.setVisible(s.dpad)
+  fpsMeter.setVisible(s.fps)
 }
 
 /** Convert a grid cell centre to framebuffer pixels. */
@@ -338,6 +378,8 @@ function frame(now: number): void {
   const frameMs = lastFrameTime === 0 ? 0 : now - lastFrameTime
   lastFrameTime = now
   if (frameMs > 0) governor.feed(frameMs)
+  // The FPS meter (if shown) tracks the same wall-clock cost.
+  if (frameMs > 0) fpsMeter.frame(frameMs)
 
   drainIntents()
   loop.tickMs = tickMsForLevel(state.level)
@@ -408,6 +450,15 @@ declare global {
       particleCount(): number
       /** Debug-only: place food at a cell so e2e can drive a deterministic eat. */
       placeFood(x: number, y: number): void
+      /**
+       * Debug-only (P4.3): force an immediate wall death. Places the whole snake
+       * connected against the right wall (head at the last column, moving right),
+       * pins the food above the centre row, and clears the turn queue so the head
+       * can't steer away — the next tick steps the head into the wall.
+       */
+      forceDeath(): void
+      /** Debug-only (P4.3): the 2D composite's centre-pixel brightness (R+G+B). */
+      centerLuma(): number
       /** Debug-only: persist a high score (with its checksum) for e2e. */
       setHighscore(n: number): void
       soundEnabled(): boolean
@@ -441,6 +492,12 @@ declare global {
       fxHealthy(): boolean
       /** Debug: the last SFX voice scheduled ('' before a gesture / muted). */
       lastSfx(): string
+      /** Debug (P4.3): whether the settings panel is open. */
+      settingsOpen(): boolean
+      /** Debug (P4.3): open/close the settings panel (mirrors the gear button). */
+      settingsToggle(): void
+      /** Debug (P4.3): the settings state (Effects/Sound/D-pad/FPS). */
+      settingsState(): { effects: boolean; sound: boolean; dpad: boolean; fps: boolean }
       /** Debug-only perf: drive `n` steady-state render frames (sim frozen). */
       perfWarm(n: number): number
       /** Debug-only perf: drive `sample` timed render frames and return stats (ms). */
@@ -505,6 +562,34 @@ window.__snake = {
     state.foodX = x
     state.foodY = y
   },
+  forceDeath(): void {
+    // An immediate, deterministic wall death: the whole snake connected against
+    // the right wall (head at the last column, moving right), the food pinned
+    // above the centre row so it can't be eaten first, and the turn queue cleared
+    // so the head can't steer away. The next sim tick steps the head into the
+    // wall. Debug-only — it writes state directly (it is not a renderer/audio).
+    const y = Math.floor(GRID_H / 2)
+    const len = state.bodyLen
+    for (let i = 0; i < len; i++) {
+      state.bodyX[i] = GRID_W - 1 - i
+      state.bodyY[i] = y
+    }
+    state.dir = 1
+    state.foodX = Math.floor(GRID_W / 2)
+    state.foodY = Math.max(1, y - 5)
+    state.pendingLen = 0
+    for (let i = 0; i < GRID_W * GRID_H; i++) state.occ[i] = 0
+    for (let i = 0; i < len; i++) {
+      const cx = state.bodyX[i]
+      if (cx !== undefined) state.occ[y * GRID_W + cx] = 1
+    }
+    intentQueue.length = 0
+    frozen = false
+    loop.reset()
+  },
+  centerLuma(): number {
+    return fb.centerLuma()
+  },
   setHighscore(n: number): void {
     state.highScore = n
     hs.save(n)
@@ -563,6 +648,15 @@ window.__snake = {
   },
   lastSfx(): string {
     return sound.lastSfx()
+  },
+  settingsOpen(): boolean {
+    return settings.isOpen()
+  },
+  settingsToggle(): void {
+    settings.toggle()
+  },
+  settingsState(): { effects: boolean; sound: boolean; dpad: boolean; fps: boolean } {
+    return settings.state()
   },
   perfWarm(n: number): number {
     const was = frozen

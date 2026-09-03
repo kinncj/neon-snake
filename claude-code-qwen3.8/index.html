@@ -28,9 +28,16 @@
         position: fixed;
         inset: 0;
       }
+      /* The glass: positioned to exactly fill the SVG's transparent screen
+         opening (left 6% / top 8% / 88% x 82%), so the centred game shows through
+         the glass while the TV bezel frames it. The game fills this box and is
+         letterboxed within it (the framebuffer composites at integer scale). */
       #screen {
         position: absolute;
-        inset: var(--bezel);
+        left: 6%;
+        top: 8%;
+        width: 88%;
+        height: 82%;
         background: #000;
         border-radius: 10px;
         overflow: hidden;
@@ -47,20 +54,19 @@
         image-rendering: pixelated;
         image-rendering: crisp-edges;
       }
-      /* The bezel: a solid ring (the physical TV frame) painted over the viewport
-         edge. z-40, pointer-events none, with a hairline glass-edge highlight. It
-         occupies only the bezel band, so it never covers the playfield. P4.2: a
-         lighter, more defined plastic frame (a readable TV, not a flat box) — the
-         highlight is a light bevel (never a darkening), and the real detailed
-         frame is the SVG sprite in P4.3. */
+      /* The bezel: the physical TV frame, now a real detailed SVG sprite
+         (plastic body, speaker vents, knobs, the NEON SNAKE brand plate)
+         stretched to fill the viewport. Its screen opening is transparent, so the
+         centred game shows through the glass while the bezel frames it. z-40,
+         pointer-events none; the opaque body frames #screen and never covers the
+         playfield (which sits inside the opening). */
       #tv-frame {
         position: absolute;
         inset: 0;
         z-index: 40;
         pointer-events: none;
-        border: var(--bezel) solid #21212e;
-        border-radius: 26px;
-        box-shadow: inset 0 0 0 2px rgba(160, 180, 255, 0.13);
+        background: url('/crt-tv.svg') no-repeat;
+        background-size: 100% 100%;
       }
       /* The breathing power LED on the bottom of the bezel. */
       #tv-led {

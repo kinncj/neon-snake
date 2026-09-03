@@ -101,6 +101,19 @@ export class Framebuffer {
     return m
   }
 
+  /**
+   * The centre pixel's brightness (max R+G+B sum) in the offscreen framebuffer.
+   * A deterministic, always-redrawn sample of the 2D composite — the e2e
+   * death-sequence test reads this (not the engine's WebGL readback) so the
+   * luminance-transition count is stable frame to frame.
+   */
+  centerLuma(): number {
+    const x = Math.floor(FRAME_W / 2)
+    const y = Math.floor(FRAME_H / 2)
+    const d = this.octx.getImageData(x, y, 1, 1).data
+    return (d[0] ?? 0) + (d[1] ?? 0) + (d[2] ?? 0)
+  }
+
   draw(s: SnakeState, alpha: number, p: Palette, particles?: ParticleSystem): void {
     const o = this.octx
     o.fillStyle = p.bg
