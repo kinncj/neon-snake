@@ -1,27 +1,29 @@
-// Procedural Web Audio SFX. No asset bytes: every voice is synthesized from
-// oscillators + a low-pass + a per-voice gain envelope (ADSR). The synth reads
-// the shared EffectSink (the same ring the renderer consumes) and drives sounds
-// off the emitted effect kinds — it never touches (much less mutates) domain
-// state, which it does not even receive.
+// Procedural SFX on the sanctioned Phase-3 engine (ADR 0007): **Tone.js 15.1.22**.
+// The decision logic lives here and is engine-agnostic and pure: which effect
+// triggers which voice (`soundNameForEffect`), the game-over sting layering, the
+// combo coin, mute + persistence, and the `lastSfx()` bookkeeping the e2e death-FX
+// gate reads. The *audio* lives in a swappable `SfxEngine`: the browser wires it
+// to a Tone.js graph (PolySynth/MonoSynth/MembraneSynth/NoiseSynth voices over a
+// low-pass SFX bus, a compressor-glued master, and a music bus for the BGM), and
+// the unit tests inject a stub so the decision logic is testable in Node.
 //
-// "Preallocated nodes reused across triggers": the master chain (voice bus →
-// 0.8 ducking gain → master gain) and a fixed pool of per-voice low-pass +
-// gain nodes are built ONCE, lazily, and then reused for every subsequent
-// trigger. The one node that cannot be reused is the OscillatorNode itself —
-// the Web Audio spec forbids restarting a stopped oscillator — so a short-lived
-// oscillator is created per note and left to GC; the expensive, sustaining
-// gain/filter nodes are the preallocated, reused ones.
+// "Preallocated, then reused": the Tone graph (voices + buses + master +
+// compressor) is built ONCE, lazily, in `ensure()`, and reused for every trigger.
+// `consume()` only schedules notes on the existing voices — it allocates nothing
+// of its own in steady state.
 //
-// Autoplay policy: no AudioContext is created until an explicit user gesture
-// (the first keydown/pointerdown). `consume()` is a no-op before then. The
-// enable state persists in localStorage; mute is keyboard-reachable ('M') and
-// a labelled, focusable control; the context is suspended when the tab hides.
-//
-// Phase 1 ships pulse/triangle/lead voices. Phase 2 adds noise/membrane voices
-// (kick/snare) for the lo-fi BGM — the pool and recipe table are shaped to
-// absorb those without changing the trigger path.
+// Autoplay policy — "no AudioContext before a gesture." Importing the `tone`
+// module eagerly creates its shared AudioContext at module load, so `tone` is
+// imported ONLY here, via a dynamic `import('tone')` inside `ensure()` — which
+// `createSound()` calls only from the first real keydown/pointerdown. Before that
+// gesture the module (and its context) does not exist and `soundReady()` is false.
+// Mute is keyboard-reachable ('M') via a labelled, focusable control; the enable
+// state persists in localStorage; the context suspends when the tab hides.
 import type { EffectCause, EffectKind, EffectSink } from '../../domain/types'
 import { subscribe, t } from '../i18n'
+
+/** The dynamically-imported Tone.js module (typed, not `any`). */
+type ToneModule = typeof import('tone')
 
 export type SoundName = 'ate' | 'levelup' | 'boom' | 'splat' | 'gameover' | 'coin'
 
@@ -34,8 +36,8 @@ export const DUCK_GAIN: number = 0.8
 const VOLUME: number = 0.9
 /** Background-music bus level: the lo-fi BGM sits well below the SFX voices. */
 export const MUSIC_LEVEL: number = 0.16
-/** How many preallocated voice channels are pooled (each: low-pass + gain). */
-const POOL_SIZE: number = 8
+/** SFX bus low-pass cutoff (Hz) — the whole SFX bus is lo-fi, not just the pad. */
+const SFX_BUS_HZ: number = 4000
 
 /** Minimal storage surface (so the persistence logic is testable in Node). */
 export interface StorageLike {
@@ -46,7 +48,7 @@ export interface StorageLike {
 
 export const SOUND_KEY: string = 'snake.sound'
 
-/** The per-voice recipe. `wave` is a Web Audio oscillator type. */
+/** The per-voice recipe. `wave` is a Web Audio oscillator type (Tone reuses it). */
 export interface VoiceRecipe {
   wave: 'sine' | 'square' | 'sawtooth' | 'triangle'
   /** Frequencies (Hz) played in order. */
@@ -65,7 +67,7 @@ export interface VoiceRecipe {
 
 // The voice library. Ate = a quick chomp; level-up = an ascending jingle;
 // a coin replaces the chomp on a combo; wall death = a low boom; self-bite =
-// a wet splat; game-over = a falling sawtooth sting. Phase 2 appends drums.
+// a wet splat; game-over = a falling sawtooth sting.
 export const VOICE_RECIPES: Readonly<Record<SoundName, VoiceRecipe>> = {
   ate: {
     wave: 'triangle',
@@ -170,76 +172,256 @@ export function writeSoundEnabled(storage: StorageLike, enabled: boolean): void 
   }
 }
 
-/** Construct a Web Audio context, or throw (the caller treats that as no audio). */
-function defaultAudioContext(): AudioContext {
-  const w = window as unknown as {
-    AudioContext?: typeof AudioContext
-    webkitAudioContext?: typeof AudioContext
-  }
-  const Ctor = w.AudioContext ?? w.webkitAudioContext
-  if (!Ctor) throw new Error('Web Audio is not available')
-  return new Ctor()
+/**
+ * The swappable audio engine. The browser implementation (`ToneSfxEngine`) is
+ * built on Tone.js; unit tests inject a stub so the decision logic in
+ * `SoundSynth` is exercised without a real (or any) AudioContext.
+ */
+export interface SfxEngine {
+  /** Build the graph once (gesture-gated); resolve the context handle, or null. */
+  ensure(): Promise<unknown>
+  /** Whether the graph has been built. */
+  ready(): boolean
+  /** The context state ('none' before a gesture, else 'running'/'suspended'/…). */
+  contextState(): string
+  /** Schedule the named voice on the existing graph (no graph allocation). */
+  play(name: SoundName): void
+  /** Ramp the master gain (mute). */
+  setMaster(v: number): void
+  /** The BGM bus (native node wired into the master; null before a gesture). */
+  musicBus(): GainNode | null
+  suspend(): Promise<void>
+  resume(): Promise<void>
+  /** Tear the graph down. */
+  detach(): void
 }
 
-interface VoiceChannel {
-  filter: BiquadFilterNode
-  gain: GainNode
+/** A built voice: schedule its recipe's note sequence + dispose the Tone node. */
+interface BuiltVoice {
+  play(freqs: readonly number[], noteGap: number, noteDur: number): void
+  dispose(): void
+}
+
+/**
+ * Build one Tone.js voice for a recipe. The synth TYPE is chosen per voice so the
+ * palette uses the sanctioned voices (PolySynth/MonoSynth/MembraneSynth/NoiseSynth):
+ * the low wall-impact boom is a MembraneSynth thud, the wet self-bite is a
+ * NoiseSynth burst, the level-up jingle is a PolySynth (polyphonic, no cut-off),
+ * and the short chomps/sting are MonoSynths. All output into `out` (the SFX bus).
+ * `Tone` is the dynamically-imported module (typed as `ToneModule`, not `any`).
+ */
+function makeVoice(Tone: ToneModule, name: SoundName, out: AudioNode): BuiltVoice {
+  const r = VOICE_RECIPES[name]
+  const vol = Tone.gainToDb(r.peak)
+  if (name === 'boom') {
+    const s = new Tone.MembraneSynth({ volume: vol, pitchDecay: r.env.d })
+    s.connect(out)
+    const thud = r.notes[r.notes.length - 1] ?? 55 // the lowest note = the thud
+    return {
+      play(freqs, _gap, dur) {
+        const f = freqs[freqs.length - 1] ?? thud
+        s.triggerAttackRelease(f, Math.max(0.12, dur + r.env.r), Tone.now())
+      },
+      dispose: () => s.dispose(),
+    }
+  }
+  if (name === 'splat') {
+    const s = new Tone.NoiseSynth({
+      noise: { type: 'white' },
+      envelope: { attack: r.env.a, decay: r.env.d, sustain: r.env.s, release: r.env.r },
+      volume: vol,
+    })
+    s.connect(out)
+    const total = Math.max(0.05, r.notes.length * (r.noteGap + r.noteDur))
+    return {
+      play: () => s.triggerAttackRelease(total, Tone.now()),
+      dispose: () => s.dispose(),
+    }
+  }
+  if (name === 'levelup') {
+    const s = new Tone.PolySynth(Tone.MonoSynth, {
+      oscillator: { type: r.wave },
+      envelope: { attack: r.env.a, decay: r.env.d, sustain: r.env.s, release: r.env.r },
+      filter: { type: 'lowpass', frequency: r.filterHz },
+      volume: vol,
+    })
+    s.connect(out)
+    return {
+      play(freqs, gap, dur) {
+        const t = Tone.now()
+        freqs.forEach((f, i) => {
+          if (f > 0) s.triggerAttackRelease(f, Math.max(0.05, dur), t + i * gap)
+        })
+      },
+      dispose: () => s.dispose(),
+    }
+  }
+  // Default: a MonoSynth per recipe wave (chomp / coin / game-over sting).
+  const s = new Tone.MonoSynth({
+    oscillator: { type: r.wave },
+    envelope: { attack: r.env.a, decay: r.env.d, sustain: r.env.s, release: r.env.r },
+    filter: { type: 'lowpass', frequency: r.filterHz },
+    volume: vol,
+  })
+  s.connect(out)
+  return {
+    play(freqs, gap, dur) {
+      const t = Tone.now()
+      freqs.forEach((f, i) => {
+        if (f > 0) s.triggerAttackRelease(f, Math.max(0.05, dur), t + i * gap)
+      })
+    },
+    dispose: () => s.dispose(),
+  }
+}
+
+/**
+ * The Tone.js engine. It is built ONLY from `ensure()` (gesture-gated): the
+ * dynamic `import('tone')` is what creates Tone's shared AudioContext, so nothing
+ * exists before the first input. The graph: per-voice Tone synths → SFX low-pass
+ * → SFX bus (the 0.8 duck) → master → compressor → destination; the BGM plugs into
+ * a native music bus wired to the master so it is muted by the same control.
+ */
+class ToneSfxEngine implements SfxEngine {
+  private t: ToneModule | null = null
+  private handle: AudioContext | null = null
+  private built = false
+  private voices = new Map<SoundName, BuiltVoice>()
+  private master: GainNode | null = null
+  private music: GainNode | null = null
+
+  async ensure(): Promise<unknown> {
+    if (this.handle) return this.handle
+    try {
+      const Tone: ToneModule = await import('tone')
+      this.t = Tone
+      const ctx = Tone.context.rawContext as AudioContext
+
+      // Native glue in Tone's context (native nodes keep the BGM path unchanged).
+      const sfxLp = ctx.createBiquadFilter()
+      sfxLp.type = 'lowpass'
+      sfxLp.frequency.value = SFX_BUS_HZ
+      const sfxBus = ctx.createGain()
+      sfxBus.gain.value = DUCK_GAIN // caps the summed SFX voices at 0.8
+      const master = ctx.createGain()
+      master.gain.value = 0 // set by setMaster() once the enable state is known
+      const compressor = ctx.createDynamicsCompressor()
+      sfxLp.connect(sfxBus)
+      sfxBus.connect(master)
+      master.connect(compressor)
+      compressor.connect(ctx.destination)
+
+      // BGM bus: a native node the songs plug into, wired to the shared master.
+      const music = ctx.createGain()
+      music.gain.value = MUSIC_LEVEL
+      music.connect(master)
+
+      for (const name of Object.keys(VOICE_RECIPES) as SoundName[]) {
+        this.voices.set(name, makeVoice(Tone, name, sfxLp))
+      }
+
+      this.master = master
+      this.music = music
+      this.built = true
+
+      // The gesture: resume the (suspended) Tone context.
+      await Tone.start()
+      this.handle = ctx
+      return ctx
+    } catch {
+      // Tone unavailable or the context could not be created → no audio. The 2D
+      // render and the rest of the game are unaffected; we keep retrying cheaply.
+      this.built = false
+      return null
+    }
+  }
+
+  ready(): boolean {
+    return this.built && this.handle !== null
+  }
+
+  contextState(): string {
+    return this.t ? this.t.context.state : 'none'
+  }
+
+  play(name: SoundName): void {
+    const v = this.voices.get(name)
+    if (!v) return
+    const r = VOICE_RECIPES[name]
+    v.play(r.notes, r.noteGap, r.noteDur)
+  }
+
+  setMaster(v: number): void {
+    if (this.master) this.master.gain.value = v
+  }
+
+  musicBus(): GainNode | null {
+    return this.music
+  }
+
+  async suspend(): Promise<void> {
+    const c = this.handle
+    if (c && c.state === 'running') {
+      try {
+        await c.suspend()
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  async resume(): Promise<void> {
+    const c = this.handle
+    if (this.t && c && c.state === 'suspended') {
+      try {
+        await this.t.start()
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  detach(): void {
+    for (const v of this.voices.values()) {
+      try {
+        v.dispose()
+      } catch {
+        // ignore
+      }
+    }
+    this.voices.clear()
+    this.master = null
+    this.music = null
+    this.built = false
+    this.handle = null
+  }
 }
 
 export class SoundSynth {
   private readonly storage: StorageLike
-  private readonly ctxFactory: () => AudioContext
-  private ctx: AudioContext | null = null
-  private voiceBus: GainNode | null = null
-  private master: GainNode | null = null
-  private music: GainNode | null = null
-  private readonly pool: VoiceChannel[] = []
-  private poolIndex = 0
+  private readonly engineFactory: () => SfxEngine
+  private engine: SfxEngine | null = null
+  private handle: unknown = null
   private lastPlayed: SoundName | '' = ''
   enabled: boolean
 
-  constructor(storage: StorageLike, ctxFactory?: () => AudioContext) {
+  constructor(storage: StorageLike, engineFactory?: () => SfxEngine) {
     this.storage = storage
-    this.ctxFactory = ctxFactory ?? defaultAudioContext
+    this.engineFactory = engineFactory ?? (() => new ToneSfxEngine())
     this.enabled = readSoundEnabled(storage)
   }
 
   /**
-   * Lazily create the AudioContext (only called from a user gesture) and build
-   * the master chain + the preallocated voice pool once. Idempotent; returns
-   * the context, or null when Web Audio is unavailable.
+   * Lazily build the engine graph (only called from a user gesture) and return
+   * the context handle (or null when audio is unavailable). Idempotent.
    */
-  ensureContext(): AudioContext | null {
-    if (this.ctx) return this.ctx
-    let ctx: AudioContext
-    try {
-      ctx = this.ctxFactory()
-    } catch {
-      return null
-    }
-    this.ctx = ctx
-    const voiceBus = ctx.createGain()
-    voiceBus.gain.value = 1
-    const duck = ctx.createGain()
-    duck.gain.value = DUCK_GAIN // caps the summed voice bus at 0.8
-    const master = ctx.createGain()
-    master.gain.value = this.enabled ? VOLUME : 0
-    voiceBus.connect(duck)
-    duck.connect(master)
-    master.connect(ctx.destination)
-    this.voiceBus = voiceBus
-    this.master = master
-    for (let i = 0; i < POOL_SIZE; i++) {
-      const filter = ctx.createBiquadFilter()
-      filter.type = 'lowpass'
-      filter.frequency.value = 4000
-      const gain = ctx.createGain()
-      gain.gain.value = 0
-      gain.connect(voiceBus)
-      this.pool.push({ filter, gain })
-    }
-    this.poolIndex = 0
-    return ctx
+  async ensureContext(): Promise<unknown> {
+    if (this.handle) return this.handle
+    if (!this.engine) this.engine = this.engineFactory()
+    this.handle = await this.engine.ensure()
+    // Apply the persisted enable state to the master once the graph exists.
+    this.engine.setMaster(this.enabled ? VOLUME : 0)
+    return this.handle
   }
 
   /**
@@ -248,7 +430,7 @@ export class SoundSynth {
    * allocation: `sink.len` is 0 most frames and the mapping allocates nothing.
    */
   consume(sink: EffectSink, combo = 1): void {
-    if (!this.enabled || !this.ctx) return
+    if (!this.enabled || !this.handle) return
     for (let i = 0; i < sink.len; i++) {
       const e = sink.buf[i]!
       const name = soundNameForEffect(e.kind, combo, e.cause)
@@ -261,44 +443,17 @@ export class SoundSynth {
   }
 
   private play(name: SoundName): void {
-    const ctx = this.ctx
-    if (!ctx || !this.voiceBus || ctx.state === 'suspended') return
+    if (!this.engine || !this.handle) return
+    if (this.engine.contextState() === 'suspended') return
     this.lastPlayed = name
-    const recipe = VOICE_RECIPES[name]
-    const t0 = ctx.currentTime
-    for (let k = 0; k < recipe.notes.length; k++) {
-      const freq = recipe.notes[k] ?? 0
-      if (freq <= 0) continue
-      const channel = this.pool[this.poolIndex]
-      // Round-robin over the preallocated channels: the gain + filter nodes are
-      // reused; only the one-shot oscillator is created fresh.
-      this.poolIndex = (this.poolIndex + 1) % POOL_SIZE
-      if (!channel) continue
-      const { a, d, s, r } = recipe.env
-      const t = t0 + k * recipe.noteGap
-      const sustainEnd = t + a + d + recipe.noteDur
-      const g = channel.gain.gain
-      g.cancelScheduledValues(t)
-      g.setValueAtTime(0.0001, t)
-      g.linearRampToValueAtTime(recipe.peak, t + a) // A
-      g.linearRampToValueAtTime(recipe.peak * s, t + a + d) // D -> S
-      g.setValueAtTime(recipe.peak * s, sustainEnd) // hold S
-      g.linearRampToValueAtTime(0.0001, sustainEnd + r) // R
-      channel.filter.frequency.value = recipe.filterHz
-      const osc = ctx.createOscillator()
-      osc.type = recipe.wave
-      osc.frequency.value = freq
-      osc.connect(channel.filter)
-      osc.start(t)
-      osc.stop(sustainEnd + r + 0.02)
-    }
+    this.engine.play(name)
   }
 
   /** Set (and persist) the sound-enabled state. Zeroes the master gain when off. */
   setEnabled(enabled: boolean): void {
     this.enabled = enabled
     writeSoundEnabled(this.storage, enabled)
-    if (this.master) this.master.gain.value = enabled ? VOLUME : 0
+    this.engine?.setMaster(enabled ? VOLUME : 0)
   }
 
   toggle(): void {
@@ -313,14 +468,14 @@ export class SoundSynth {
     return !this.enabled
   }
 
-  /** Whether the (post-gesture) AudioContext has been created. */
+  /** Whether the (post-gesture) context has been created. */
   isReady(): boolean {
-    return this.ctx !== null
+    return this.handle !== null
   }
 
-  /** The AudioContext state, or 'none' before a gesture. */
+  /** The context state, or 'none' before a gesture. */
   contextState(): string {
-    return this.ctx ? this.ctx.state : 'none'
+    return this.engine ? this.engine.contextState() : 'none'
   }
 
   /** The voice-bus ducking gain (0.8), for the e2e gate. */
@@ -337,44 +492,25 @@ export class SoundSynth {
     return this.lastPlayed
   }
 
-  /**
-   * A background-music bus routed to the shared master (below the 0.8 voice
-   * duck), so the global mute ('M' / toggle) silences the BGM too. Lazily
-   * created once the context exists; returns null before a gesture.
-   */
+  /** The BGM bus (null before a gesture); the songs route through it. */
   musicBus(): GainNode | null {
-    if (!this.ctx || !this.master) return null
-    if (!this.music) {
-      const g = this.ctx.createGain()
-      g.gain.value = MUSIC_LEVEL
-      g.connect(this.master)
-      this.music = g
-    }
-    return this.music
+    return this.engine?.musicBus() ?? null
   }
 
   /** Suspend the context (tab hidden) to save CPU. Safe no-op if absent. */
   async suspend(): Promise<void> {
-    const ctx = this.ctx
-    if (ctx && ctx.state === 'running') {
-      try {
-        await ctx.suspend()
-      } catch {
-        // ignore
-      }
-    }
+    await this.engine?.suspend()
   }
 
   /** Resume the context (tab shown). Only when sound is enabled. */
   async resume(): Promise<void> {
-    const ctx = this.ctx
-    if (ctx && this.enabled && ctx.state === 'suspended') {
-      try {
-        await ctx.resume()
-      } catch {
-        // ignore
-      }
-    }
+    if (this.enabled) await this.engine?.resume()
+  }
+
+  detach(): void {
+    this.engine?.detach()
+    this.engine = null
+    this.handle = null
   }
 }
 
@@ -398,23 +534,26 @@ export interface SoundHandle {
 
 /**
  * Wire the SoundSynth to the page: the labelled mute control, the 'M' shortcut,
- * the first-gesture AudioContext unlock, and the visibility suspend/resume.
- * Returns the handle plus the control element to append to the document.
+ * the first-gesture AudioContext unlock (the dynamic `import('tone')` happens
+ * inside `ensureContext`, so no context exists before the gesture), and the
+ * visibility suspend/resume. Returns the handle plus the control to append.
  */
 export function createSound(): SoundHandle {
   const synth = new SoundSynth(window.localStorage)
 
-  // Gesture-gated unlock: create the context on the first real input, then stop
-  // listening. Idempotent if Web Audio is unavailable (we keep retrying cheaply).
+  // Gesture-gated unlock: build the Tone graph (and create the context) on the
+  // first real input, then stop listening. Idempotent if audio is unavailable.
   let unlocked = false
   const onGesture = (): void => {
     if (unlocked) return
-    if (synth.ensureContext()) {
-      unlocked = true
-      window.removeEventListener('keydown', onGesture)
-      window.removeEventListener('pointerdown', onGesture)
-      void synth.resume()
-    }
+    void (async () => {
+      const ok = await synth.ensureContext()
+      if (ok) {
+        unlocked = true
+        window.removeEventListener('keydown', onGesture)
+        window.removeEventListener('pointerdown', onGesture)
+      }
+    })()
   }
   window.addEventListener('keydown', onGesture)
   window.addEventListener('pointerdown', onGesture)
@@ -494,6 +633,7 @@ export function createSound(): SoundHandle {
       window.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('visibilitychange', onVis)
       unsubscribeLocale()
+      synth.detach()
       root.remove()
     },
   }

@@ -10,13 +10,15 @@ test('no AudioContext before a gesture, unlocked by real input', async ({ page }
   await page.goto('/')
   await page.waitForTimeout(100)
 
-  // No gesture yet: the adapter has not created an AudioContext.
+  // No gesture yet: the adapter has not imported the engine or created a context.
   expect(await page.evaluate(() => window.__snake.soundReady())).toBe(false)
 
-  // A real key press is a user gesture → the context is unlocked.
+  // A real key press is a user gesture → the engine (Tone.js) is dynamically
+  // imported and its context unlocked. The import + graph build is async, so poll
+  // until the flag flips (robust to a slow first chunk fetch) rather than a fixed
+  // sleep.
   await page.keyboard.press('ArrowUp')
-  await page.waitForTimeout(120)
-  expect(await page.evaluate(() => window.__snake.soundReady())).toBe(true)
+  await page.waitForFunction(() => window.__snake.soundReady(), { timeout: 3000 })
 })
 
 test('mute is keyboard-reachable and the control is labelled', async ({ page }) => {
