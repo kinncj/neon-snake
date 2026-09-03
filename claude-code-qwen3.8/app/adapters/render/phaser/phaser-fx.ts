@@ -326,10 +326,12 @@ export class PhaserFx {
       const fy = oy + (s.foodY + 0.5) * cs
       const fc = hexToRgb(p.food)
       const halo = Math.max(2, 4 * (cs / CELL_PX))
-      g.fillStyle(Phaser.Display.Color.GetColor(fc[0], fc[1], fc[2]), 0.28)
-      g.fillCircle(fx, fy, halo * 2.2)
-      g.fillStyle(Phaser.Display.Color.GetColor(fc[0], fc[1], fc[2]), 0.55)
-      g.fillCircle(fx, fy, halo * 1.4)
+      // P4.2: a softer emissive halo (gentler glow radii + alpha) — the bright
+      // core is unchanged so the food still reads clearly.
+      g.fillStyle(Phaser.Display.Color.GetColor(fc[0], fc[1], fc[2]), 0.16)
+      g.fillCircle(fx, fy, halo * 1.9)
+      g.fillStyle(Phaser.Display.Color.GetColor(fc[0], fc[1], fc[2]), 0.4)
+      g.fillCircle(fx, fy, halo * 1.2)
       g.fillStyle(Phaser.Display.Color.GetColor(255, 255, 255), 0.9)
       g.fillCircle(fx, fy, halo * 0.7)
     }
@@ -526,7 +528,9 @@ export class PhaserFx {
     const W = this.cssW
     const H = this.cssH
     const steps = 6
-    const fade = 0.9 // spec vignette peak; confined to the letterbox
+    // P4.2: softer vignette (the user flagged the dark edge). Peak is 0.55 (was
+    // 0.9) and — as before — confined to the letterbox so it never darkens play.
+    const fade = 0.55
     // top strip
     if (oy > 0) {
       const sh = oy / steps

@@ -146,10 +146,12 @@ export class Framebuffer {
     const px = cx * CELL_PX + CELL_PX / 2
     const py = cy * CELL_PX + CELL_PX / 2
     o.save()
-    o.globalAlpha = 0.35
+    // P4.2: a softer emissive halo (gentler glow) — the bright core (below) is
+    // unchanged so the food still reads at its cell centre.
+    o.globalAlpha = 0.24
     o.fillStyle = p.food
     o.beginPath()
-    o.arc(px, py, 4, 0, Math.PI * 2)
+    o.arc(px, py, 3.4, 0, Math.PI * 2)
     o.fill()
     o.globalAlpha = 1
     o.beginPath()

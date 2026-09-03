@@ -83,17 +83,23 @@ const DIR_ARIA: Record<Dir, StringKey> = {
   3: 'dpad.left',
 }
 
+/** Neon cyan (R,G,B) — the d-pad is theme-independent UI chrome, so it is a fixed
+ *  accent, not the level theme. */
+const NEON = '77,225,255'
+
 export function createDpad(push: (i: Intent) => void): Dpad {
+  // P4.2: a bigger neon pad that AUTO-SHOWS on a touch device. A desktop (no
+  // touch) keeps it hidden by default — the e2e suite runs headless with no
+  // touch, so the default stays hidden there and the `setDpadVisible` hook is
+  // what shows it. Positioning/docking (docks left in landscape, right in
+  // portrait) lives in index.html so a media query can re-dock it.
+  const isTouch = typeof navigator !== 'undefined' && (navigator.maxTouchPoints ?? 0) > 0
   const root = document.createElement('div')
   root.id = 'dpad'
   root.style.cssText = [
-    'position:fixed',
-    'left:calc(var(--bezel) + 16px)',
-    'bottom:calc(var(--bezel) + 16px)',
     'display:none',
     'grid-template-areas:"_ u _" "l _ r" "_ d _"',
-    'gap:8px',
-    'z-index:50',
+    'gap:10px',
     'touch-action:none',
     'user-select:none',
   ].join(';')
@@ -104,16 +110,19 @@ export function createDpad(push: (i: Intent) => void): Dpad {
     b.type = 'button'
     b.textContent = d.label
     buttons.push({ el: b, key: DIR_ARIA[d.dir] })
+    // P4.2: bigger (64px) + neon — an emissive cyan edge + inner glow.
     b.style.cssText = [
-      'width:52px',
-      'height:52px',
-      'font-size:24px',
+      'width:64px',
+      'height:64px',
+      'font-size:30px',
       'grid-area:' + d.grid,
-      'border:1px solid rgba(255,255,255,.25)',
-      'border-radius:10px',
-      'background:rgba(255,255,255,.06)',
-      'color:#fff',
+      'border:1.5px solid rgba(' + NEON + ',.5)',
+      'border-radius:14px',
+      'background:rgba(' + NEON + ',.08)',
+      'color:#eafcff',
       'cursor:pointer',
+      'box-shadow:0 0 12px rgba(' + NEON + ',.28), inset 0 0 10px rgba(' + NEON + ',.14)',
+      'text-shadow:0 0 8px rgba(' + NEON + ',.85)',
     ].join(';')
     const emit = (): void => {
       vibrate()
@@ -133,12 +142,16 @@ export function createDpad(push: (i: Intent) => void): Dpad {
   syncAria()
   subscribe(syncAria)
 
-  let visible = false
+  let visible = isTouch
+  const apply = (): void => {
+    root.style.display = visible ? 'grid' : 'none'
+  }
+  apply()
   return {
     root,
     setVisible(v: boolean): void {
       visible = v
-      root.style.display = v ? 'grid' : 'none'
+      apply()
     },
     isVisible(): boolean {
       return visible

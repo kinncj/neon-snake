@@ -49,16 +49,18 @@
       }
       /* The bezel: a solid ring (the physical TV frame) painted over the viewport
          edge. z-40, pointer-events none, with a hairline glass-edge highlight. It
-         occupies only the bezel band, so it never covers the playfield. (It becomes
-         a real SVG sprite in Phase 4.) */
+         occupies only the bezel band, so it never covers the playfield. P4.2: a
+         lighter, more defined plastic frame (a readable TV, not a flat box) — the
+         highlight is a light bevel (never a darkening), and the real detailed
+         frame is the SVG sprite in P4.3. */
       #tv-frame {
         position: absolute;
         inset: 0;
         z-index: 40;
         pointer-events: none;
-        border: var(--bezel) solid #0d0d16;
-        border-radius: 22px;
-        box-shadow: inset 0 0 0 1px rgba(150, 170, 255, 0.1);
+        border: var(--bezel) solid #21212e;
+        border-radius: 26px;
+        box-shadow: inset 0 0 0 2px rgba(160, 180, 255, 0.13);
       }
       /* The breathing power LED on the bottom of the bezel. */
       #tv-led {
@@ -84,6 +86,21 @@
         50% {
           opacity: 1;
           box-shadow: 0 0 9px 2px rgba(53, 224, 138, 0.9);
+        }
+      }
+      /* The on-screen d-pad (touch.ts owns its buttons + neon styling + display).
+         P4.2: docks LEFT in landscape (the playfield's natural thumb-pad rest),
+         and moves to the RIGHT in portrait so it clears the centred playfield. */
+      #dpad {
+        position: fixed;
+        left: calc(var(--bezel) + 18px);
+        bottom: calc(var(--bezel) + 18px);
+        z-index: 50;
+      }
+      @media (orientation: portrait) {
+        #dpad {
+          left: auto;
+          right: calc(var(--bezel) + 18px);
         }
       }
     </style>
