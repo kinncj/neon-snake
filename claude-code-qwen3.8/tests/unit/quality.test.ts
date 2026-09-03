@@ -58,16 +58,16 @@ describe('medianOf', () => {
 describe('QualityGovernor escalation', () => {
   it('escalates low -> high -> ultra once the median drops below the threshold', () => {
     const g = new QualityGovernor('low')
-    // fill the 120-frame window with fast frames (< 11 ms)
-    feed(g, 5, FRAME_WINDOW)
+    // fill the 120-frame window with fast frames (well below the escalate threshold)
+    feed(g, ESCALATE_MS / 2, FRAME_WINDOW)
     expect(g.tier).toBe('high')
-    feed(g, 5, MIN_INTERVAL_FRAMES) // cooldown + a fresh window
+    feed(g, ESCALATE_MS / 2, MIN_INTERVAL_FRAMES) // cooldown + a fresh window
     expect(g.tier).toBe('ultra')
   })
 
   it('cannot escalate past the ceiling', () => {
     const g = new QualityGovernor('high', 'high') // ceiling = high (no ultra)
-    feed(g, 5, FRAME_WINDOW + MIN_INTERVAL_FRAMES + 10)
+    feed(g, ESCALATE_MS / 2, FRAME_WINDOW + MIN_INTERVAL_FRAMES + 10)
     expect(g.tier).toBe('high')
   })
 

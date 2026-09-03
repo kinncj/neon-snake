@@ -6,6 +6,7 @@
 // interpolated by `alpha`; the simulation is not. This composite is always drawn
 // beneath the engine canvas as the guaranteed fallback — never a black screen.
 import { CELL_PX, FRAME_H, FRAME_W, type SnakeState } from '../../domain/types'
+import { ParticleSystem } from './particles'
 import type { Palette } from './theme'
 
 export interface Layout {
@@ -73,19 +74,39 @@ export class Framebuffer {
     }
   }
 
-  draw(s: SnakeState, alpha: number, p: Palette): void {
+  draw(s: SnakeState, alpha: number, p: Palette, particles?: ParticleSystem): void {
     const o = this.octx
     o.fillStyle = p.bg
     o.fillRect(0, 0, FRAME_W, FRAME_H)
     this.drawGrid(o, p.grid)
     if (s.foodX !== -1) this.drawFood(o, s.foodX, s.foodY, p)
     this.drawSnake(o, s, alpha, p)
+    // Particles are presentation-only and transient: in steady state (no burst)
+    // `active` is 0 and this is a no-op, so the zero-allocation budget holds.
+    if (particles && particles.active > 0) this.drawParticles(o, particles)
 
     const d = this.dctx
     d.fillStyle = p.bg
     d.fillRect(0, 0, this.layout.w, this.layout.h)
     d.imageSmoothingEnabled = false
     d.drawImage(this.off, this.layout.offX, this.layout.offY, FRAME_W * this.layout.scale, FRAME_H * this.layout.scale)
+  }
+
+  private drawParticles(o: CanvasRenderingContext2D, ps: ParticleSystem): void {
+    const c: [number, number, number] = [255, 255, 255]
+    ps.forEachLive((i) => {
+      ps.colorAt(i, c)
+      const a = ps.alphaAt(i)
+      const x = ParticleSystem.clampX(ps.xAt(i))
+      const y = ParticleSystem.clampY(ps.yAt(i))
+      const r = Math.max(0.5, ps.sizeAt(i) * a)
+      o.globalAlpha = a
+      o.fillStyle = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'
+      o.beginPath()
+      o.arc(x, y, r, 0, Math.PI * 2)
+      o.fill()
+    })
+    o.globalAlpha = 1
   }
 
   private drawGrid(o: CanvasRenderingContext2D, color: string): void {
