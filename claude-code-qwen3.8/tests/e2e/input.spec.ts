@@ -39,7 +39,9 @@ test('on-screen d-pad is hidden by default and steers when shown', async ({ page
 
   expect(await page.evaluate(() => window.__snake.dpadVisible())).toBe(false)
   await page.evaluate(() => window.__snake.setDpadVisible(true))
-  const up = page.locator('#dpad button[aria-label="move 0"]')
+  // The d-pad buttons carry localized accessible labels (i18n); fresh pages
+  // default to English, so the up key is labelled "Move up".
+  const up = page.locator('#dpad button[aria-label="Move up"]')
   await expect(up).toBeVisible()
 
   await up.click()

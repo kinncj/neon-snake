@@ -21,6 +21,7 @@
 // (kick/snare) for the lo-fi BGM — the pool and recipe table are shaped to
 // absorb those without changing the trigger path.
 import type { EffectKind, EffectSink } from '../../domain/types'
+import { subscribe, t } from '../i18n'
 
 export type SoundName = 'ate' | 'levelup' | 'died'
 
@@ -346,7 +347,12 @@ export function createSound(): SoundHandle {
   const root = document.createElement('button')
   root.type = 'button'
   root.id = 'sound-toggle'
-  root.setAttribute('aria-label', 'Toggle sound (M)')
+  // The accessible label is localized (i18n) and re-read on a locale change.
+  const syncLabel = (): void => {
+    root.setAttribute('aria-label', t('sound.toggle'))
+  }
+  syncLabel()
+  const unsubscribeLocale = subscribe(syncLabel)
   root.style.cssText = [
     'position:fixed',
     'top:12px',
@@ -408,6 +414,7 @@ export function createSound(): SoundHandle {
       window.removeEventListener('pointerdown', onGesture)
       window.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('visibilitychange', onVis)
+      unsubscribeLocale()
       root.remove()
     },
   }

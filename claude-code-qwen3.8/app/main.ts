@@ -15,6 +15,7 @@ import {
   type SnakeState,
 } from './domain/types'
 import { createSound, type SoundHandle } from './adapters/audio/synth'
+import { getLocale, setLocale } from './adapters/i18n'
 import { createGamepad } from './adapters/input/gamepad'
 import { createKeyboard } from './adapters/input/keyboard'
 import { createDpad, createSwipe } from './adapters/input/touch'
@@ -276,6 +277,10 @@ declare global {
       soundReady(): boolean
       soundMuted(): boolean
       soundDuck(): number
+      /** Debug: the active locale (i18n). */
+      locale(): string
+      /** Debug: switch locale (i18n) so e2e can verify the re-render. */
+      setLocale(l: 'en' | 'ja' | 'es'): void
       /** Debug-only perf: drive `n` steady-state render frames (sim frozen). */
       perfWarm(n: number): number
       /** Debug-only perf: drive `sample` timed render frames and return stats (ms). */
@@ -358,6 +363,12 @@ window.__snake = {
   },
   soundDuck(): number {
     return sound.duckGain()
+  },
+  locale(): string {
+    return getLocale()
+  },
+  setLocale(l: 'en' | 'ja' | 'es'): void {
+    setLocale(l)
   },
   perfWarm(n: number): number {
     const was = frozen

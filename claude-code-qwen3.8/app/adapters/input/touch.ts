@@ -4,6 +4,8 @@
 // works for both touch and mouse. `navigator.vibrate(10)` fires on a d-pad press
 // where available.
 import type { Dir, Intent } from '../../domain/types'
+import { subscribe, t } from '../i18n'
+import type { StringKey } from '../i18n/strings'
 
 const SWIPE_PX = 24
 
@@ -73,6 +75,14 @@ const DIRS: Array<{ label: string; dir: Dir; grid: string }> = [
   { label: '→', dir: 1, grid: '2 / 3' },
 ]
 
+/** Accessible label key per direction (0=up, 1=right, 2=down, 3=left). */
+const DIR_ARIA: Record<Dir, StringKey> = {
+  0: 'dpad.up',
+  1: 'dpad.right',
+  2: 'dpad.down',
+  3: 'dpad.left',
+}
+
 export function createDpad(push: (i: Intent) => void): Dpad {
   const root = document.createElement('div')
   root.id = 'dpad'
@@ -88,11 +98,12 @@ export function createDpad(push: (i: Intent) => void): Dpad {
     'user-select:none',
   ].join(';')
 
+  const buttons: Array<{ el: HTMLButtonElement; key: StringKey }> = []
   for (const d of DIRS) {
     const b = document.createElement('button')
     b.type = 'button'
     b.textContent = d.label
-    b.setAttribute('aria-label', `move ${d.dir}`)
+    buttons.push({ el: b, key: DIR_ARIA[d.dir] })
     b.style.cssText = [
       'width:52px',
       'height:52px',
@@ -114,6 +125,13 @@ export function createDpad(push: (i: Intent) => void): Dpad {
     })
     root.appendChild(b)
   }
+
+  // Localized accessible labels, re-read on a locale change (i18n).
+  const syncAria = (): void => {
+    for (const { el, key } of buttons) el.setAttribute('aria-label', t(key))
+  }
+  syncAria()
+  subscribe(syncAria)
 
   let visible = false
   return {
