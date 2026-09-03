@@ -6,6 +6,7 @@ async function snap(page: import('@playwright/test').Page) {
 
 test('keyboard controls restart, pause, and turn', async ({ page }) => {
   await page.goto('/')
+  await page.evaluate(() => window.__snake.start()) // title → playing (the sim steps only in `playing`)
   await page.evaluate(() => window.__snake.setFrozen(true))
   await page.waitForTimeout(120)
 
@@ -34,6 +35,7 @@ test('keyboard controls restart, pause, and turn', async ({ page }) => {
 
 test('on-screen d-pad is hidden by default and steers when shown', async ({ page }) => {
   await page.goto('/')
+  await page.evaluate(() => window.__snake.start()) // title → playing
   await page.evaluate(() => window.__snake.setFrozen(true))
   await page.waitForTimeout(80)
 
@@ -52,6 +54,7 @@ test('on-screen d-pad is hidden by default and steers when shown', async ({ page
 
 test('a touch swipe steers the snake', async ({ page }) => {
   await page.goto('/')
+  await page.evaluate(() => window.__snake.start()) // title → playing
   await page.evaluate(() => window.__snake.setFrozen(true))
   await page.waitForTimeout(100)
 

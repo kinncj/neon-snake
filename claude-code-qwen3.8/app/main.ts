@@ -3,7 +3,7 @@
 // small `window.__snake` debug API for the e2e suite. Rendering and audio are
 // read-only observers of state and emitted effects; they never mutate state.
 import { enqueue } from './domain/intents'
-import { tickMsForLevel } from './domain/levels'
+import { levelForScore, tickMsForLevel } from './domain/levels'
 import { init, step } from './domain/step'
 import {
   CELL_PX,
@@ -24,6 +24,8 @@ import { ParticleSystem } from './adapters/render/particles'
 import { fxActive, PhaserFx, type FxTier } from './adapters/render/phaser/phaser-fx'
 import { themeForLevel } from './adapters/render/theme'
 import { createHighscore } from './adapters/storage/highscore'
+import { createHud, type Hud } from './adapters/ui/hud'
+import { createOverlays, type Overlays, type UiMode } from './adapters/ui/overlays'
 import { FixedTimestepLoop } from './runtime/loop'
 import {
   QualityGovernor,
@@ -53,6 +55,24 @@ let state: SnakeState = init(SEED)
 const sink = createSink()
 let frozen = false
 let currentAlpha = 0
+
+// UI mode (presentation-only; the domain has no `title` phase). The sim steps
+// only while the mode is `playing` and not debug-frozen. `title` is the initial
+// state: the snake is drawn but frozen behind the title screen until the player
+// (or the `start()` debug hook) begins a run.
+let started = false
+function startGame(): void {
+  if (started) return
+  started = true
+  frozen = false
+  loop.reset()
+}
+function currentUiMode(): UiMode {
+  if (!started) return 'title'
+  if (state.phase === 'gameover') return 'gameover'
+  if (state.phase === 'paused') return 'paused'
+  return 'playing'
+}
 
 // High score: mirrored to localStorage (with a checksum) by the storage adapter.
 // Seed the session best from storage; the domain bumps `highScore` on death.
@@ -97,6 +117,14 @@ document.body.appendChild(dpad.root)
 const sound: SoundHandle = createSound()
 document.body.appendChild(sound.root)
 
+// HUD + overlays (step 19): read-only presentation of score/best/level and the
+// title/pause/gameover screens + score popups + level-up banner. Both read the
+// domain state and the i18n catalog; neither mutates state.
+const hud: Hud = createHud()
+const overlays: Overlays = createOverlays()
+document.body.appendChild(hud.root)
+document.body.appendChild(overlays.root)
+
 // Quality governor: probe the hardware once, pick a starting tier, then let the
 // rolling frame-time median move it. `reduced` (OS or user Effects-off) is a
 // hard override the governor never walks out of.
@@ -136,6 +164,15 @@ function cellPx(cx: number, cy: number): { x: number; y: number } {
   return { x: cx * CELL_PX + CELL_PX / 2, y: cy * CELL_PX + CELL_PX / 2 }
 }
 
+/** Convert a grid cell centre to on-screen CSS pixels (for the DOM score popups). */
+function cellCss(cx: number, cy: number): { x: number; y: number } {
+  const lay = fb.getLayout()
+  const dpr = window.devicePixelRatio || 1
+  const fx = cx * CELL_PX + CELL_PX / 2
+  const fy = cy * CELL_PX + CELL_PX / 2
+  return { x: (lay.offX + fx * lay.scale) / dpr, y: (lay.offY + fy * lay.scale) / dpr }
+}
+
 /** Parse a #rrggbb colour to a 0-255 RGB triple (FX particle colouring). */
 function hexRgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '')
@@ -145,8 +182,9 @@ function hexRgb(hex: string): [number, number, number] {
 
 /**
  * Consume the frame's emitted effects and drive the presentation FX (particles,
- * flash, shake, shockwave). Read-only with respect to domain state — we only
- * read the effects and the current state to position the FX.
+ * flash, shake, shockwave) and the DOM popups (score "+N", level-up banner).
+ * Read-only with respect to domain state — we only read the effects and the
+ * current state to position the FX / popups.
  */
 function handleEffects(s: SnakeState): void {
   for (let i = 0; i < sink.len; i++) {
@@ -156,6 +194,8 @@ function handleEffects(s: SnakeState): void {
         const c = cellPx(e.x, e.y)
         const [r, g, b] = hexRgb(themeForLevel(s.level).palette.food)
         particles.burst(c.x, c.y, 14, { color: [r, g, b], speed: 70, lifeMs: 480, size: 1.4 })
+        const css = cellCss(e.x, e.y)
+        overlays.showScorePop(e.value, css.x, css.y)
         break
       }
       case 'levelup': {
@@ -163,6 +203,7 @@ function handleEffects(s: SnakeState): void {
         const [r, g, b] = hexRgb(themeForLevel(s.level).palette.accent)
         particles.burst(c.x, c.y, 26, { color: [r, g, b], speed: 110, lifeMs: 700, size: 1.6 })
         fx.levelUpPulse()
+        overlays.showLevelUp(e.value)
         break
       }
       case 'died': {
@@ -226,14 +267,31 @@ function frame(now: number): void {
 
   drainIntents()
   loop.tickMs = tickMsForLevel(state.level)
-  if (!frozen) currentAlpha = loop.update(now)
+  const mode = currentUiMode()
+  // The sim steps only while actively playing; title / paused / gameover freeze
+  // it (the 2D + HUD + overlay render still run every frame).
+  if (mode === 'playing' && !frozen) currentAlpha = loop.update(now)
   renderFrame(frameMs > 0 ? frameMs : 16, currentAlpha)
+  hud.update(state)
+  // The sim may have just changed the phase this frame (e.g. a wall death), so
+  // the overlays read the mode AFTER the step — the screen tracks the current
+  // phase in the same frame it occurs.
+  overlays.update(currentUiMode(), state)
   requestAnimationFrame(frame)
 }
 
 window.addEventListener('resize', resize)
 window.addEventListener('orientationchange', resize)
 resize()
+
+// Any key press or tap on the title screen begins a run (real players). The e2e
+// suite drives the same transition explicitly via `window.__snake.start()`.
+const beginOnInput = (): void => {
+  if (!started) startGame()
+}
+window.addEventListener('keydown', beginOnInput)
+window.addEventListener('pointerdown', beginOnInput)
+
 requestAnimationFrame(frame)
 
 // ---- debug API (window.__snake) ------------------------------------------
@@ -277,10 +335,18 @@ declare global {
       soundReady(): boolean
       soundMuted(): boolean
       soundDuck(): number
+      /** Debug: the AudioContext state ('none' pre-gesture, else 'running'/'suspended'). */
+      contextState(): string
       /** Debug: the active locale (i18n). */
       locale(): string
       /** Debug: switch locale (i18n) so e2e can verify the re-render. */
       setLocale(l: 'en' | 'ja' | 'es'): void
+      /** Debug: the active UI mode (`title | playing | paused | gameover`). */
+      uiMode(): string
+      /** Debug: begin a run (title → playing); mirrors the any-key/tap start. */
+      start(): void
+      /** Debug-only: set the score (and re-derive the level) so e2e can reach the MAX HUD state. */
+      setScore(n: number): void
       /** Debug-only perf: drive `n` steady-state render frames (sim frozen). */
       perfWarm(n: number): number
       /** Debug-only perf: drive `sample` timed render frames and return stats (ms). */
@@ -364,11 +430,24 @@ window.__snake = {
   soundDuck(): number {
     return sound.duckGain()
   },
+  contextState(): string {
+    return sound.contextState()
+  },
   locale(): string {
     return getLocale()
   },
   setLocale(l: 'en' | 'ja' | 'es'): void {
     setLocale(l)
+  },
+  uiMode(): string {
+    return currentUiMode()
+  },
+  start(): void {
+    startGame()
+  },
+  setScore(n: number): void {
+    state.score = n
+    state.level = levelForScore(n)
   },
   perfWarm(n: number): number {
     const was = frozen

@@ -74,6 +74,7 @@ test('2D framebuffer stays the ground-truth render regardless of FX state', asyn
 
 test('a deterministic eat drives a particle burst on the 2D surface', async ({ page }) => {
   await page.goto('/')
+  await page.evaluate(() => window.__snake.start()) // title → playing
 
   // Freeze immediately and read the LIVE head pose (it may have advanced during
   // page load). Place food exactly one cell ahead of the current head so the
