@@ -14,6 +14,7 @@ import {
   type Intent,
   type SnakeState,
 } from './domain/types'
+import { createSound, type SoundHandle } from './adapters/audio/synth'
 import { createGamepad } from './adapters/input/gamepad'
 import { createKeyboard } from './adapters/input/keyboard'
 import { createDpad, createSwipe } from './adapters/input/touch'
@@ -81,6 +82,12 @@ createGamepad(pushIntent)
 createSwipe(pushIntent, canvas)
 const dpad = createDpad(pushIntent) // hidden by default; the settings panel owns visibility
 document.body.appendChild(dpad.root)
+
+// Sound: gesture-gated procedural Web Audio. The adapter owns the labelled mute
+// control and the 'M' shortcut; its enable state persists in localStorage. It
+// reads the same effect sink the FX layer consumes and never touches state.
+const sound: SoundHandle = createSound()
+document.body.appendChild(sound.root)
 
 // Quality governor: probe the hardware once, pick a starting tier, then let the
 // rolling frame-time median move it. `reduced` (OS or user Effects-off) is a
@@ -193,6 +200,7 @@ function frame(now: number): void {
   const pal = themeForLevel(state.level).palette
   fb.draw(state, currentAlpha, pal, particles)
   handleEffects(state)
+  sound.consume(sink) // read-only: plays voices off the frame's emitted effects
   sinkReset(sink)
   // Gate the FX engine by the governor's tier (recompute only on a change).
   const t = governor.tier
@@ -242,6 +250,11 @@ declare global {
       particleCount(): number
       /** Debug-only: place food at a cell so e2e can drive a deterministic eat. */
       placeFood(x: number, y: number): void
+      soundEnabled(): boolean
+      setSoundEnabled(v: boolean): void
+      soundReady(): boolean
+      soundMuted(): boolean
+      soundDuck(): number
     }
   }
 }
@@ -300,5 +313,20 @@ window.__snake = {
   placeFood(x: number, y: number): void {
     state.foodX = x
     state.foodY = y
+  },
+  soundEnabled(): boolean {
+    return sound.soundEnabled()
+  },
+  setSoundEnabled(v: boolean): void {
+    sound.setEnabled(v)
+  },
+  soundReady(): boolean {
+    return sound.isReady()
+  },
+  soundMuted(): boolean {
+    return sound.isMuted()
+  },
+  soundDuck(): number {
+    return sound.duckGain()
   },
 }
