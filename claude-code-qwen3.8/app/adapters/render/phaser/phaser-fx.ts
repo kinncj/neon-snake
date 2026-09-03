@@ -19,6 +19,7 @@ import Phaser from 'phaser'
 import { CELL_PX, GRID_H, GRID_W, type SnakeState } from '../../../domain/types'
 import type { Layout } from '../framebuffer'
 import { ParticleSystem } from '../particles'
+import { walkSegment, type WalkBody } from '../snake-walk'
 import type { Palette } from '../theme'
 
 export type FxTier = 'low' | 'high' | 'ultra'
@@ -369,22 +370,14 @@ export class PhaserFx {
       g.fillCircle(ox + phx * cs, oy + phy * cs, cs * 0.6)
     }
 
+    // The glide is the pure smooth-walk from `snake-walk` (P4.1): the tail is
+    // detected by index and holds static on a growth tick, never reading a stale
+    // preallocated body cell. It mirrors the 2D ground-truth composite.
+    const body: WalkBody = { x: s.bodyX, y: s.bodyY, len: s.bodyLen }
     for (let i = s.bodyLen - 1; i >= 0; i--) {
-      // Glide this segment from its previous cell to its current cell by `alpha`
-      // (the smooth-walk interpolation; mirrors the 2D ground-truth composite).
-      const ccx = s.bodyX[i] ?? 0
-      const ccy = s.bodyY[i] ?? 0
-      let px: number
-      let py: number
-      if (i < prev.len) {
-        const pcx = prev.x[i] ?? ccx
-        const pcy = prev.y[i] ?? ccy
-        px = ox + (pcx + (ccx - pcx) * alpha) * cs
-        py = oy + (pcy + (ccy - pcy) * alpha) * cs
-      } else {
-        px = ox + ccx * cs
-        py = oy + ccy * cs
-      }
+      const seg = walkSegment(body, i, prev.len, alpha)
+      const px = ox + seg.x * cs
+      const py = oy + seg.y * cs
       const inset = Math.max(1, cs * 0.12)
       if (i === 0) {
         // halo + block + direction-facing eyes

@@ -8,6 +8,7 @@
 import { CELL_PX, FRAME_H, FRAME_W, type SnakeState } from '../../domain/types'
 import { ParticleSystem } from './particles'
 import type { Palette } from './theme'
+import { walkSegment, type WalkBody } from './snake-walk'
 
 export interface Layout {
   w: number
@@ -158,23 +159,14 @@ export class Framebuffer {
   }
 
   private drawSnake(o: CanvasRenderingContext2D, s: SnakeState, alpha: number, p: Palette): void {
-    // Draw tail-to-head so the head sits on top.
+    // Draw tail-to-head so the head sits on top. The glide is the pure smooth-walk
+    // from `snake-walk` (P4.1): the tail is detected by index and holds static on
+    // a growth tick, never reading a stale preallocated body cell.
+    const body: WalkBody = { x: s.bodyX, y: s.bodyY, len: s.bodyLen }
     for (let i = s.bodyLen - 1; i >= 0; i--) {
-      let fx: number
-      let fy: number
-      if (i < this.prevBodyLen) {
-        // glide this segment from its previous cell to its current cell by alpha
-        const pcx = this.prevBodyX[i] ?? s.bodyX[i] ?? 0
-        const pcy = this.prevBodyY[i] ?? s.bodyY[i] ?? 0
-        const ccx = s.bodyX[i] ?? 0
-        const ccy = s.bodyY[i] ?? 0
-        fx = (pcx + (ccx - pcx) * alpha) * CELL_PX
-        fy = (pcy + (ccy - pcy) * alpha) * CELL_PX
-      } else {
-        // a freshly-grown tail holds static this tick (see snake-walk / P4.1)
-        fx = (s.bodyX[i] ?? 0) * CELL_PX
-        fy = (s.bodyY[i] ?? 0) * CELL_PX
-      }
+      const seg = walkSegment(body, i, this.prevBodyLen, alpha)
+      const fx = seg.x * CELL_PX
+      const fy = seg.y * CELL_PX
       const rx = Math.round(fx)
       const ry = Math.round(fy)
       o.fillStyle = i === 0 ? p.head : p.body
