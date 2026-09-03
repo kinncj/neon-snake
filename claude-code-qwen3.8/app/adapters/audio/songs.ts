@@ -371,7 +371,7 @@ class SongEngine {
     if (idx !== this.currentIdx) this.playThis(idx)
   }
 
-  /** A ~1s crossfade into `idx` (rendering its loop first if not yet cached). */
+  /** A 250 ms crossfade into `idx` (rendering its loop first if not yet cached). */
   private playThis(idx: number): void {
     const ctx = this.ctx
     const bus = this.bus
@@ -388,7 +388,7 @@ class SongEngine {
       const g = ctx.createGain()
       const now = ctx.currentTime
       g.gain.setValueAtTime(0, now)
-      g.gain.linearRampToValueAtTime(1, now + 0.8) // fade in
+      g.gain.linearRampToValueAtTime(1, now + 0.25) // 250 ms fade in
       s.connect(g)
       g.connect(bus)
       s.start()
@@ -422,13 +422,13 @@ class SongEngine {
         try {
           g.gain.cancelScheduledValues(now)
           g.gain.setValueAtTime(Math.max(0.0001, g.gain.value), now)
-          g.gain.linearRampToValueAtTime(0.0001, now + 0.4)
+          g.gain.linearRampToValueAtTime(0.0001, now + 0.25) // 250 ms fade out
         } catch {
           // ignore
         }
       }
       try {
-        s.stop(now + 0.5)
+        s.stop(now + 0.3)
       } catch {
         // ignore
       }

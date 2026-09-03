@@ -7,6 +7,7 @@ import { levelForScore, tickMsForLevel } from './domain/levels'
 import { init, step } from './domain/step'
 import {
   CELL_PX,
+  GRID_H,
   GRID_W,
   createSink,
   sinkReset,
@@ -36,6 +37,9 @@ import {
 } from './runtime/quality'
 
 const SEED = 'snake-0001'
+
+/** A wet, theme-agnostic red for the self-bite "blood" collision FX. */
+const BLOOD: readonly [number, number, number] = [214, 40, 40]
 
 const stage = document.getElementById('stage')
 if (!stage) throw new Error('missing #stage')
@@ -226,18 +230,35 @@ function handleEffects(s: SnakeState): void {
         const hx = s.bodyX[0] ?? 0
         const hy = s.bodyY[0] ?? 0
         const c = cellPx(hx, hy)
-        const [r, g, b] = hexRgb(themeForLevel(s.level).palette.accent)
-        let dir = 0 // 0 = full frame
-        if (e.cause === 'wall') {
-          // Wall death: particles fly off the wall (right/left), flash is local.
-          if (hx >= GRID_W - 1) dir = 1
-          else if (hx <= 0) dir = -1
-        }
-        particles.burst(c.x, c.y, 40, { color: [r, g, b], speed: 150, lifeMs: 900, size: 1.8 })
-        fx.flash(1, dir)
-        fx.shake(10)
-        fx.shockwave(c.x, c.y)
         hs.save(s.highScore) // the domain bumped highScore to the final score
+        if (e.cause === 'self') {
+          // Self-bite: a wet "blood" splatter from the head (radial) + a smaller
+          // shake. The chomp/splat SFX is driven by the audio (cause → 'splat');
+          // both end by dissolving into the gameover panel (the death burst
+          // scatters the snake and the panel fades in — see overlays.ts).
+          particles.burst(c.x, c.y, 46, { color: BLOOD, speed: 130, lifeMs: 900, size: 1.9 })
+          fx.shake(6)
+          fx.flash(0.6, 0)
+        } else {
+          // Wall death: sparks fly off the wall (away from it), a hard local flash
+          // + a radial shockwave + a strong shake. The boom SFX is driven by the
+          // audio (cause → 'boom').
+          let dir = 0 // flash dir: 0=full, 1=right, -1=left (the FX flash is L/R only)
+          let angle = 0 // spark direction (radians, 0 = +x)
+          let spread = Math.PI * 2 // default radial (defensive: 'none' cause)
+          if (e.cause === 'wall') {
+            spread = Math.PI * 0.9
+            if (hx >= GRID_W - 1) { dir = 1; angle = 0 } // right wall → +x
+            else if (hx <= 0) { dir = -1; angle = Math.PI } // left wall → -x
+            else if (hy >= GRID_H - 1) { angle = Math.PI / 2 } // bottom wall → +y
+            else if (hy <= 0) { angle = -Math.PI / 2 } // top wall → -y
+          }
+          const [r, g, b] = hexRgb(themeForLevel(s.level).palette.accent)
+          particles.burst(c.x, c.y, 44, { color: [r, g, b], speed: 170, lifeMs: 900, size: 1.5, angleCenter: angle, angleSpread: spread })
+          fx.flash(1, dir)
+          fx.shake(12)
+          fx.shockwave(c.x, c.y)
+        }
         break
       }
       default:
@@ -246,17 +267,46 @@ function handleEffects(s: SnakeState): void {
   }
 }
 
+// Last CSS geometry (the black-frame watchdog re-renders the 2D path with these
+// if it detects a stuck-black frame).
+let lastCssW = 0
+let lastCssH = 0
+let lastDpr = 1
 function resize(): void {
   // Size the framebuffer to the glass (#screen), which is inset by the bezel.
   const w = screenEl?.clientWidth ?? window.innerWidth
   const h = screenEl?.clientHeight ?? window.innerHeight
-  fb.resize(w, h, window.devicePixelRatio || 1)
+  const dpr = window.devicePixelRatio || 1
+  lastCssW = w
+  lastCssH = h
+  lastDpr = dpr
+  fb.resize(w, h, dpr)
   fx.resize(fb.getLayout())
   if (screenEl) {
     const r = screenEl.getBoundingClientRect()
     screenOx = r.left
     screenOy = r.top
   }
+}
+
+// ---- black-frame watchdog --------------------------------------------------
+// A healthy frame keeps the 2D ground truth bright (grid + snake + food) and the
+// FX engine (if on) healthy. Every 60 frames we verify both; a stuck-black 2D
+// frame is re-rendered (resetting its context) and an unhealthy FX is degraded to
+// the 2D path, so the playable render never dies. `recoveries` counts auto-
+// recoveries (the e2e gate expects 0 in a healthy session).
+let watchdogN = 0
+let recoveries = 0
+const BLACK_FRAME_MAX = 80 // below this (max R+G+B) the 2D frame reads as black
+function watchdog(): void {
+  if (++watchdogN % 60 !== 0) return
+  // 1) The 2D ground truth must have content (grid/snake/food), not be black.
+  if (fb.sampleMax() < BLACK_FRAME_MAX) {
+    fb.resize(lastCssW, lastCssH, lastDpr) // reset the 2D context + force a composite
+    recoveries++
+  }
+  // 2) The FX, if enabled, must be healthy; otherwise degrade to the 2D path.
+  if (fx.enabled && !fx.healthy()) governorLost()
 }
 
 /**
@@ -271,7 +321,7 @@ function renderFrame(dt: number, alpha: number): void {
   const pal = themeForLevel(state.level).palette
   fb.draw(state, alpha, pal, particles)
   handleEffects(state)
-  sound.consume(sink) // read-only: plays voices off the frame's emitted effects
+  sound.consume(sink, state.combo) // read-only: plays voices off the frame's effects (combo drives the coin)
   sinkReset(sink)
   // Gate the FX engine by the governor's tier (recompute only on a change).
   const t = governor.tier
@@ -279,7 +329,7 @@ function renderFrame(dt: number, alpha: number): void {
     lastTier = t
     fx.setEnabled(fxActive(t), t as FxTier)
   }
-  if (fx.enabled) fx.setFrame(state, alpha, pal, particles)
+  if (fx.enabled) fx.setFrame(state, alpha, pal, particles, fb.prevBody())
 }
 
 let lastFrameTime = 0
@@ -306,6 +356,7 @@ function frame(now: number): void {
   // (playing or paused); it fades out on title/gameover and crossfades to the
   // next track on a level-up. Read-only with respect to domain state.
   songs.tick(state.level, m === 'playing' || m === 'paused')
+  watchdog()
   requestAnimationFrame(frame)
 }
 
@@ -382,6 +433,14 @@ declare global {
       songBpm(): number
       /** Debug: whether a BGM track is currently playing. */
       songPlaying(): boolean
+      /** Debug: the black-frame watchdog's auto-recovery count (0 = healthy). */
+      watchdogRecoveries(): number
+      /** Debug: the 2D ground-truth brightness (max R+G+B); > 300 = alive. */
+      frameBrightness(): number
+      /** Debug: whether the FX engine is healthy (WebGL alive, not lost). */
+      fxHealthy(): boolean
+      /** Debug: the last SFX voice scheduled ('' before a gesture / muted). */
+      lastSfx(): string
       /** Debug-only perf: drive `n` steady-state render frames (sim frozen). */
       perfWarm(n: number): number
       /** Debug-only perf: drive `sample` timed render frames and return stats (ms). */
@@ -492,6 +551,18 @@ window.__snake = {
   },
   songPlaying(): boolean {
     return songs.playing()
+  },
+  watchdogRecoveries(): number {
+    return recoveries
+  },
+  frameBrightness(): number {
+    return fb.sampleMax()
+  },
+  fxHealthy(): boolean {
+    return fx.healthy()
+  },
+  lastSfx(): string {
+    return sound.lastSfx()
   },
   perfWarm(n: number): number {
     const was = frozen

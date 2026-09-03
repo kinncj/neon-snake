@@ -58,14 +58,22 @@ describe('sound persistence', () => {
 // ---- the effect → sound mapping (consumes the shared sink) --------------
 describe('soundNameForEffect', () => {
   it('maps the meaningful game events to voices', () => {
-    expect(soundNameForEffect('ate')).toBe('ate')
-    expect(soundNameForEffect('levelup')).toBe('levelup')
-    expect(soundNameForEffect('died')).toBe('died')
+    expect(soundNameForEffect('ate', 1, 'none')).toBe('ate')
+    expect(soundNameForEffect('levelup', 0, 'none')).toBe('levelup')
+    // A death resolves by cause: wall → boom, self → splat.
+    expect(soundNameForEffect('died', 0, 'wall')).toBe('boom')
+    expect(soundNameForEffect('died', 0, 'self')).toBe('splat')
+    expect(soundNameForEffect('died', 0, 'none')).toBe('boom')
+  })
+  it('swaps the chomp for a coin on a combo', () => {
+    expect(soundNameForEffect('ate', 1, 'none')).toBe('ate')
+    expect(soundNameForEffect('ate', 2, 'none')).toBe('coin')
+    expect(soundNameForEffect('ate', 5, 'none')).toBe('coin')
   })
   it('is silent for movement/growth/spawn', () => {
-    expect(soundNameForEffect('turned')).toBeNull()
-    expect(soundNameForEffect('grew')).toBeNull()
-    expect(soundNameForEffect('spawned')).toBeNull()
+    expect(soundNameForEffect('turned', 0, 'none')).toBeNull()
+    expect(soundNameForEffect('grew', 0, 'none')).toBeNull()
+    expect(soundNameForEffect('spawned', 0, 'none')).toBeNull()
   })
 })
 
@@ -74,9 +82,16 @@ describe('voice recipes', () => {
   it('the ducking gain caps the voice bus at 0.8', () => {
     expect(DUCK_GAIN).toBe(0.8)
   })
-  it('every Phase-1 voice is well-formed', () => {
+  it('every event voice is well-formed', () => {
     const WAVES = new Set(['sine', 'square', 'sawtooth', 'triangle'])
-    for (const name of ['ate', 'levelup', 'died'] as SoundName[]) {
+    for (const name of [
+      'ate',
+      'levelup',
+      'boom',
+      'splat',
+      'gameover',
+      'coin',
+    ] as SoundName[]) {
       const r = VOICE_RECIPES[name]
       expect(WAVES.has(r.wave)).toBe(true)
       expect(r.notes.length).toBeGreaterThan(0)

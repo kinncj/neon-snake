@@ -74,6 +74,32 @@ export class Framebuffer {
     }
   }
 
+  /**
+   * The previous-tick body snapshot (grid coords). Exposed so the FX layer can
+   * glide its snake prev -> current by `alpha` — the same smooth-walk
+   * interpolation the 2D composite uses. Read-only; the arrays are reused.
+   */
+  prevBody(): { x: Int32Array; y: Int32Array; len: number } {
+    return { x: this.prevBodyX, y: this.prevBodyY, len: this.prevBodyLen }
+  }
+
+  /**
+   * The brightest pixel (max R+G+B sum, 0-765) in the offscreen framebuffer.
+   * A healthy frame shows grid + snake + food well above the near-black bg
+   * (bg ~50; snake/food > 330); an all-black value means the 2D draw failed.
+   * The black-frame watchdog and the e2e gate read this. Reads the 256x240
+   * buffer (small, called rarely — every N frames / on demand).
+   */
+  sampleMax(): number {
+    const data = this.octx.getImageData(0, 0, FRAME_W, FRAME_H).data
+    let m = 0
+    for (let i = 0; i < data.length; i += 4) {
+      const sum = (data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0)
+      if (sum > m) m = sum
+    }
+    return m
+  }
+
   draw(s: SnakeState, alpha: number, p: Palette, particles?: ParticleSystem): void {
     const o = this.octx
     o.fillStyle = p.bg

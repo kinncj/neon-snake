@@ -120,14 +120,22 @@ export function createOverlays(): Overlays {
   syncLabels()
   const unsubscribe = subscribe(syncLabels)
 
+  let lastMode: UiMode = 'title'
   function update(mode: UiMode, s: SnakeState): void {
+    const enteringGameover = mode === 'gameover' && lastMode !== 'gameover'
     title.style.display = mode === 'title' ? 'flex' : 'none'
     pause.style.display = mode === 'paused' ? 'flex' : 'none'
     gameover.style.display = mode === 'gameover' ? 'flex' : 'none'
+    if (enteringGameover) {
+      // The collision-FX "dissolve" into the gameover panel: the death burst has
+      // scattered the snake into particles, and the panel dissolves in over it.
+      gameover.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, easing: 'ease-out' })
+    }
     if (mode === 'gameover') {
       score.value.textContent = String(s.score)
       best.value.textContent = String(s.highScore)
     }
+    lastMode = mode
   }
 
   function showScorePop(n: number, x: number, y: number): void {

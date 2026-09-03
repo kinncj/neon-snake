@@ -38,6 +38,8 @@ interface FxFrame {
   alpha: number
   palette: Palette
   particles: ParticleSystem | null
+  /** Previous-tick body snapshot (grid coords) for the smooth-walk glide. */
+  prev: { x: Int32Array; y: Int32Array; len: number }
 }
 
 const TAU = Math.PI * 2
@@ -184,9 +186,21 @@ export class PhaserFx {
     }
   }
 
-  /** Set the per-frame input (state, alpha, palette, particles). */
-  setFrame(s: SnakeState, alpha: number, palette: Palette, particles: ParticleSystem | null): void {
-    this.frame = { state: s, alpha, palette, particles }
+  /** Set the per-frame input (state, alpha, palette, particles, prev body). */
+  setFrame(
+    s: SnakeState,
+    alpha: number,
+    palette: Palette,
+    particles: ParticleSystem | null,
+    prev: { x: Int32Array; y: Int32Array; len: number },
+  ): void {
+    this.frame = { state: s, alpha, palette, particles, prev }
+  }
+
+  /** True while the WebGL context is alive (not lost). The watchdog degrades to
+   *  the 2D path if the FX is enabled but unhealthy. */
+  healthy(): boolean {
+    return this.webgl && !this.lost
   }
 
   /**
@@ -319,16 +333,15 @@ export class PhaserFx {
       g.fillCircle(fx, fy, halo * 0.7)
     }
 
-    // 3) the blocky neon snake (tail-to-head; crisp cells — glide lands in step 23).
-    this.drawSnake(g, s, p, ox, oy, cs)
+    // 3) the blocky neon snake, gliding prev -> current by `alpha` (smooth walk)
+    //    with an emissive afterglow trail (matches the 2D ground-truth composite).
+    this.drawSnake(g, s, p, ox, oy, cs, alpha, f.prev)
 
     // 4) particles (shared with the 2D framebuffer; positions in framebuffer px).
     if (particles && particles.active > 0) this.drawParticles(g, particles, ox, oy, pxPerFb)
 
     // 5) CRT post + one-shot effects (see the class doc for the playfield rule).
     this.drawPost(gPost, p, ox, oy, fieldW, fieldH, pxPerFb, tier)
-
-    void alpha // reserved for the smooth-walk glide (step 23)
   }
 
   private drawSnake(
@@ -338,16 +351,40 @@ export class PhaserFx {
     ox: number,
     oy: number,
     cs: number,
+    alpha: number,
+    prev: { x: Int32Array; y: Int32Array; len: number },
   ): void {
     const bodyC = hexToRgb(p.body)
     const headC = hexToRgb(p.head)
     const accC = hexToRgb(p.accent)
     const bodyG = Math.min(255, bodyC[1] * 0.9 + 20)
+
+    // Emissive afterglow trail: a fading glow at the head's previous cell (the
+    // one it just left) that dies out as the head glides forward — a discrete
+    // glow trail, not a smeared motion-blur/ghost. Drawn behind the body.
+    if (alpha < 1) {
+      const phx = (prev.x[0] ?? (s.bodyX[0] ?? 0)) + 0.5
+      const phy = (prev.y[0] ?? (s.bodyY[0] ?? 0)) + 0.5
+      g.fillStyle(Phaser.Display.Color.GetColor(headC[0], headC[1], headC[2]), (1 - alpha) * 0.26)
+      g.fillCircle(ox + phx * cs, oy + phy * cs, cs * 0.6)
+    }
+
     for (let i = s.bodyLen - 1; i >= 0; i--) {
+      // Glide this segment from its previous cell to its current cell by `alpha`
+      // (the smooth-walk interpolation; mirrors the 2D ground-truth composite).
       const ccx = s.bodyX[i] ?? 0
       const ccy = s.bodyY[i] ?? 0
-      const px = ox + ccx * cs
-      const py = oy + ccy * cs
+      let px: number
+      let py: number
+      if (i < prev.len) {
+        const pcx = prev.x[i] ?? ccx
+        const pcy = prev.y[i] ?? ccy
+        px = ox + (pcx + (ccx - pcx) * alpha) * cs
+        py = oy + (pcy + (ccy - pcy) * alpha) * cs
+      } else {
+        px = ox + ccx * cs
+        py = oy + ccy * cs
+      }
       const inset = Math.max(1, cs * 0.12)
       if (i === 0) {
         // halo + block + direction-facing eyes
@@ -466,9 +503,10 @@ export class PhaserFx {
     if (tier !== 'ultra') return // high = snake/food/particles/shake; no CRT overlays
 
     // --- CRT post (ultra) --------------------------------------------------
-    // Scanlines: subtle full-screen texture (does not obscure at this alpha).
+    // Scanlines: the CRT mask at the spec's base intensity (0.16). A 1px line
+    // every 4px at this alpha adds scanline texture without reducing legibility.
     const scanY = Math.floor(now * 8) % 4
-    gPost.fillStyle(0x000000, 0.05)
+    gPost.fillStyle(0x000000, 0.16)
     for (let y = scanY; y < H; y += 4) gPost.fillRect(0, y, W, 1)
 
     // Slow single-sine luminance flicker (~4.2s period), very low amplitude.
@@ -489,11 +527,13 @@ export class PhaserFx {
     fh: number,
   ): void {
     // The field is centred; the letterbox margins are the top/bottom/left/right
-    // strips. Darken only those strips, fading from the field edge outward.
+    // strips. Darken ONLY those strips (the vignette peak is 0.9 at the outer
+    // edge, fading toward the field) so it never darkens the playfield — the
+    // user requirement that post-FX stay off the playable area.
     const W = this.cssW
     const H = this.cssH
     const steps = 6
-    const fade = 0.1 // per-step alpha, subtle
+    const fade = 0.9 // spec vignette peak; confined to the letterbox
     // top strip
     if (oy > 0) {
       const sh = oy / steps

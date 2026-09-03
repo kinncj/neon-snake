@@ -20,10 +20,10 @@
 // Phase 1 ships pulse/triangle/lead voices. Phase 2 adds noise/membrane voices
 // (kick/snare) for the lo-fi BGM — the pool and recipe table are shaped to
 // absorb those without changing the trigger path.
-import type { EffectKind, EffectSink } from '../../domain/types'
+import type { EffectCause, EffectKind, EffectSink } from '../../domain/types'
 import { subscribe, t } from '../i18n'
 
-export type SoundName = 'ate' | 'levelup' | 'died'
+export type SoundName = 'ate' | 'levelup' | 'boom' | 'splat' | 'gameover' | 'coin'
 
 /**
  * The ducking gain on the voice bus: it caps the summed voice level at 0.8 of
@@ -63,8 +63,9 @@ export interface VoiceRecipe {
   peak: number
 }
 
-// The voice library. Ate = a quick upward blip; level-up = an ascending lead
-// arpeggio; death = a falling sawtooth sweep. Phase 2 appends drum recipes.
+// The voice library. Ate = a quick chomp; level-up = an ascending jingle;
+// a coin replaces the chomp on a combo; wall death = a low boom; self-bite =
+// a wet splat; game-over = a falling sawtooth sting. Phase 2 appends drums.
 export const VOICE_RECIPES: Readonly<Record<SoundName, VoiceRecipe>> = {
   ate: {
     wave: 'triangle',
@@ -84,7 +85,28 @@ export const VOICE_RECIPES: Readonly<Record<SoundName, VoiceRecipe>> = {
     filterHz: 5200,
     peak: 0.22,
   },
-  died: {
+  boom: {
+    // Wall death: a hard low impact that rumbles out (drives the sparks + shock).
+    wave: 'sawtooth',
+    notes: [110.0, 55.0],
+    noteDur: 0.05,
+    noteGap: 0.04,
+    env: { a: 0.002, d: 0.12, s: 0.5, r: 0.22 },
+    filterHz: 1200,
+    peak: 0.45,
+  },
+  splat: {
+    // Self-bite: a quick wet pitch-drop "squish."
+    wave: 'triangle',
+    notes: [440.0, 220.0, 110.0],
+    noteDur: 0.04,
+    noteGap: 0.03,
+    env: { a: 0.002, d: 0.06, s: 0.4, r: 0.1 },
+    filterHz: 2200,
+    peak: 0.32,
+  },
+  gameover: {
+    // The sting that closes out any death: a falling sawtooth sweep.
     wave: 'sawtooth',
     notes: [392.0, 329.63, 261.63, 196.0],
     noteDur: 0.16,
@@ -93,20 +115,36 @@ export const VOICE_RECIPES: Readonly<Record<SoundName, VoiceRecipe>> = {
     filterHz: 1800,
     peak: 0.28,
   },
+  coin: {
+    // Combo reward: a bright two-note coin, pitched above the chomp.
+    wave: 'square',
+    notes: [987.77, 1318.51],
+    noteDur: 0.06,
+    noteGap: 0.06,
+    env: { a: 0.002, d: 0.05, s: 0.5, r: 0.12 },
+    filterHz: 6000,
+    peak: 0.2,
+  },
 }
 
 /**
  * Which SFX (if any) an emitted effect triggers. Only the meaningful game
- * events sound; movement/growth/spawn are silent. Pure — unit-tested.
+ * events sound; movement/growth/spawn are silent. A death resolves by cause
+ * (wall → boom, self → splat); the game-over sting is layered on top by
+ * `consume`. A chomp becomes a coin on a combo. Pure — unit-tested.
  */
-export function soundNameForEffect(kind: EffectKind): SoundName | null {
+export function soundNameForEffect(
+  kind: EffectKind,
+  combo: number,
+  cause: EffectCause,
+): SoundName | null {
   switch (kind) {
     case 'ate':
-      return 'ate'
+      return combo > 1 ? 'coin' : 'ate'
     case 'levelup':
       return 'levelup'
     case 'died':
-      return 'died'
+      return cause === 'self' ? 'splat' : 'boom'
     default:
       return null
   }
@@ -157,6 +195,7 @@ export class SoundSynth {
   private music: GainNode | null = null
   private readonly pool: VoiceChannel[] = []
   private poolIndex = 0
+  private lastPlayed: SoundName | '' = ''
   enabled: boolean
 
   constructor(storage: StorageLike, ctxFactory?: () => AudioContext) {
@@ -208,10 +247,15 @@ export class SoundSynth {
    * gesture (no context) or when sound is disabled. Zero steady-state
    * allocation: `sink.len` is 0 most frames and the mapping allocates nothing.
    */
-  consume(sink: EffectSink): void {
+  consume(sink: EffectSink, combo = 1): void {
     if (!this.enabled || !this.ctx) return
     for (let i = 0; i < sink.len; i++) {
-      const name = soundNameForEffect(sink.buf[i]!.kind)
+      const e = sink.buf[i]!
+      const name = soundNameForEffect(e.kind, combo, e.cause)
+      // A death layers the game-over sting under the cause-specific hit
+      // (boom/splat). Scheduling the sting first keeps `lastSfx()` reporting
+      // the cause-specific voice, which the death FX is keyed on.
+      if (e.kind === 'died') this.play('gameover')
       if (name) this.play(name)
     }
   }
@@ -219,6 +263,7 @@ export class SoundSynth {
   private play(name: SoundName): void {
     const ctx = this.ctx
     if (!ctx || !this.voiceBus || ctx.state === 'suspended') return
+    this.lastPlayed = name
     const recipe = VOICE_RECIPES[name]
     const t0 = ctx.currentTime
     for (let k = 0; k < recipe.notes.length; k++) {
@@ -284,6 +329,15 @@ export class SoundSynth {
   }
 
   /**
+   * The last SFX voice actually scheduled (or '' before a gesture / muted).
+   * Exposed for the e2e death-FX gate: a wall death reports 'boom', a
+   * self-bite 'splat' (the game-over sting is scheduled first, under it).
+   */
+  lastSfx(): string {
+    return this.lastPlayed
+  }
+
+  /**
    * A background-music bus routed to the shared master (below the 0.8 voice
    * duck), so the global mute ('M' / toggle) silences the BGM too. Lazily
    * created once the context exists; returns null before a gesture.
@@ -327,7 +381,7 @@ export class SoundSynth {
 /** The audio adapter handle returned to the runtime wiring. */
 export interface SoundHandle {
   root: HTMLElement
-  consume(sink: EffectSink): void
+  consume(sink: EffectSink, combo?: number): void
   setEnabled(enabled: boolean): void
   toggle(): void
   soundEnabled(): boolean
@@ -335,6 +389,8 @@ export interface SoundHandle {
   isReady(): boolean
   contextState(): string
   duckGain(): number
+  /** The last SFX voice scheduled ('' before a gesture); the e2e death-FX gate. */
+  lastSfx(): string
   /** The shared BGM bus (null before a gesture); the songs route through it. */
   musicBus(): GainNode | null
   detach(): void
@@ -422,7 +478,7 @@ export function createSound(): SoundHandle {
 
   return {
     root,
-    consume: (sink) => synth.consume(sink),
+    consume: (sink, combo) => synth.consume(sink, combo),
     setEnabled: (v) => synth.setEnabled(v),
     toggle: () => synth.toggle(),
     soundEnabled: () => synth.soundEnabled(),
@@ -430,6 +486,7 @@ export function createSound(): SoundHandle {
     isReady: () => synth.isReady(),
     contextState: () => synth.contextState(),
     duckGain: () => synth.duckGain(),
+    lastSfx: () => synth.lastSfx(),
     musicBus: () => synth.musicBus(),
     detach(): void {
       window.removeEventListener('keydown', onGesture)
