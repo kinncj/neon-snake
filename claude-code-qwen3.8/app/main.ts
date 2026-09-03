@@ -15,6 +15,7 @@ import {
   type SnakeState,
 } from './domain/types'
 import { createSound, type SoundHandle } from './adapters/audio/synth'
+import { createSongs } from './adapters/audio/songs'
 import { getLocale, setLocale } from './adapters/i18n'
 import { createGamepad } from './adapters/input/gamepad'
 import { createKeyboard } from './adapters/input/keyboard'
@@ -123,6 +124,11 @@ document.body.appendChild(dpad.root)
 // reads the same effect sink the FX layer consumes and never touches state.
 const sound: SoundHandle = createSound()
 document.body.appendChild(sound.root)
+
+// Per-level lo-fi BGM (step 22): routes through the shared music bus, so the
+// global mute silences it with the SFX. Driven read-only each frame by the
+// current level and UI mode; it crossfades to the next track on a level-up.
+const songs = createSongs(sound)
 
 // HUD + overlays (step 19): read-only presentation of score/best/level and the
 // title/pause/gameover screens + score popups + level-up banner. Both read the
@@ -294,7 +300,12 @@ function frame(now: number): void {
   // The sim may have just changed the phase this frame (e.g. a wall death), so
   // the overlays read the mode AFTER the step — the screen tracks the current
   // phase in the same frame it occurs.
-  overlays.update(currentUiMode(), state)
+  const m = currentUiMode()
+  overlays.update(m, state)
+  // BGM (step 22): the track follows the level and plays while a run is active
+  // (playing or paused); it fades out on title/gameover and crossfades to the
+  // next track on a level-up. Read-only with respect to domain state.
+  songs.tick(state.level, m === 'playing' || m === 'paused')
   requestAnimationFrame(frame)
 }
 
@@ -365,6 +376,12 @@ declare global {
       start(): void
       /** Debug-only: set the score (and re-derive the level) so e2e can reach the MAX HUD state. */
       setScore(n: number): void
+      /** Debug: the active BGM track name ('' before the first level is set). */
+      songName(): string
+      /** Debug: the active BGM track's bpm (0 before the first level is set). */
+      songBpm(): number
+      /** Debug: whether a BGM track is currently playing. */
+      songPlaying(): boolean
       /** Debug-only perf: drive `n` steady-state render frames (sim frozen). */
       perfWarm(n: number): number
       /** Debug-only perf: drive `sample` timed render frames and return stats (ms). */
@@ -466,6 +483,15 @@ window.__snake = {
   setScore(n: number): void {
     state.score = n
     state.level = levelForScore(n)
+  },
+  songName(): string {
+    return songs.name()
+  },
+  songBpm(): number {
+    return songs.bpm()
+  },
+  songPlaying(): boolean {
+    return songs.playing()
   },
   perfWarm(n: number): number {
     const was = frozen

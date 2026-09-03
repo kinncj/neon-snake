@@ -32,6 +32,8 @@ export type SoundName = 'ate' | 'levelup' | 'died'
 export const DUCK_GAIN: number = 0.8
 /** Base master gain when sound is enabled (before the 0.8 duck still applies). */
 const VOLUME: number = 0.9
+/** Background-music bus level: the lo-fi BGM sits well below the SFX voices. */
+export const MUSIC_LEVEL: number = 0.16
 /** How many preallocated voice channels are pooled (each: low-pass + gain). */
 const POOL_SIZE: number = 8
 
@@ -152,6 +154,7 @@ export class SoundSynth {
   private ctx: AudioContext | null = null
   private voiceBus: GainNode | null = null
   private master: GainNode | null = null
+  private music: GainNode | null = null
   private readonly pool: VoiceChannel[] = []
   private poolIndex = 0
   enabled: boolean
@@ -280,6 +283,22 @@ export class SoundSynth {
     return DUCK_GAIN
   }
 
+  /**
+   * A background-music bus routed to the shared master (below the 0.8 voice
+   * duck), so the global mute ('M' / toggle) silences the BGM too. Lazily
+   * created once the context exists; returns null before a gesture.
+   */
+  musicBus(): GainNode | null {
+    if (!this.ctx || !this.master) return null
+    if (!this.music) {
+      const g = this.ctx.createGain()
+      g.gain.value = MUSIC_LEVEL
+      g.connect(this.master)
+      this.music = g
+    }
+    return this.music
+  }
+
   /** Suspend the context (tab hidden) to save CPU. Safe no-op if absent. */
   async suspend(): Promise<void> {
     const ctx = this.ctx
@@ -316,6 +335,8 @@ export interface SoundHandle {
   isReady(): boolean
   contextState(): string
   duckGain(): number
+  /** The shared BGM bus (null before a gesture); the songs route through it. */
+  musicBus(): GainNode | null
   detach(): void
 }
 
@@ -409,6 +430,7 @@ export function createSound(): SoundHandle {
     isReady: () => synth.isReady(),
     contextState: () => synth.contextState(),
     duckGain: () => synth.duckGain(),
+    musicBus: () => synth.musicBus(),
     detach(): void {
       window.removeEventListener('keydown', onGesture)
       window.removeEventListener('pointerdown', onGesture)
