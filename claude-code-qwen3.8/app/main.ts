@@ -22,6 +22,7 @@ import { Framebuffer, type Layout } from './adapters/render/framebuffer'
 import { ParticleSystem } from './adapters/render/particles'
 import { fxActive, PhaserFx, type FxTier } from './adapters/render/phaser/phaser-fx'
 import { themeForLevel } from './adapters/render/theme'
+import { createHighscore } from './adapters/storage/highscore'
 import { FixedTimestepLoop } from './runtime/loop'
 import {
   QualityGovernor,
@@ -52,10 +53,16 @@ const sink = createSink()
 let frozen = false
 let currentAlpha = 0
 
+// High score: mirrored to localStorage (with a checksum) by the storage adapter.
+// Seed the session best from storage; the domain bumps `highScore` on death.
+const hs = createHighscore(window.localStorage)
+state.highScore = hs.load()
+
 /** Apply a turn/pause (or restart, which re-inits from the same seed). */
 function applyIntent(intent: Intent): void {
   if (intent.kind === 'restart') {
     state = init(state.seed)
+    state.highScore = hs.load() // keep the (persisted) best across restarts
     particles.reset()
   } else state = enqueue(state, intent)
 }
@@ -172,6 +179,7 @@ function handleEffects(s: SnakeState): void {
         fx.flash(1, dir)
         fx.shake(10)
         fx.shockwave(c.x, c.y)
+        hs.save(s.highScore) // the domain bumped highScore to the final score
         break
       }
       default:
@@ -185,6 +193,29 @@ function resize(): void {
   fx.resize(fb.getLayout())
 }
 
+/**
+ * One presentation frame's body (everything after the sim advances): particle
+ * update, the 2D composite (ground truth), effect + audio consumption, and the
+ * FX-engine gate. Extracted so the perf benchmark can drive it synchronously.
+ * Steady-state, this allocates nothing (particles inactive, sink empty, palette
+ * is a pre-existing reference, FX off at the low tier).
+ */
+function renderFrame(dt: number, alpha: number): void {
+  particles.update(dt)
+  const pal = themeForLevel(state.level).palette
+  fb.draw(state, alpha, pal, particles)
+  handleEffects(state)
+  sound.consume(sink) // read-only: plays voices off the frame's emitted effects
+  sinkReset(sink)
+  // Gate the FX engine by the governor's tier (recompute only on a change).
+  const t = governor.tier
+  if (t !== lastTier) {
+    lastTier = t
+    fx.setEnabled(fxActive(t), t as FxTier)
+  }
+  if (fx.enabled) fx.setFrame(state, alpha, pal, particles)
+}
+
 let lastFrameTime = 0
 function frame(now: number): void {
   // Feed the governor the real wall-clock frame cost (sim + render).
@@ -195,20 +226,7 @@ function frame(now: number): void {
   drainIntents()
   loop.tickMs = tickMsForLevel(state.level)
   if (!frozen) currentAlpha = loop.update(now)
-  // Advance the FX particles, then draw the 2D composite (the ground truth).
-  particles.update(frameMs > 0 ? frameMs : 16)
-  const pal = themeForLevel(state.level).palette
-  fb.draw(state, currentAlpha, pal, particles)
-  handleEffects(state)
-  sound.consume(sink) // read-only: plays voices off the frame's emitted effects
-  sinkReset(sink)
-  // Gate the FX engine by the governor's tier (recompute only on a change).
-  const t = governor.tier
-  if (t !== lastTier) {
-    lastTier = t
-    fx.setEnabled(fxActive(t), t as FxTier)
-  }
-  if (fx.enabled) fx.setFrame(state, currentAlpha, pal, particles)
+  renderFrame(frameMs > 0 ? frameMs : 16, currentAlpha)
   requestAnimationFrame(frame)
 }
 
@@ -230,6 +248,7 @@ export interface SnakeDebugState {
   foodY: number
   headX: number
   headY: number
+  highScore: number
   layout: Layout
 }
 
@@ -250,11 +269,17 @@ declare global {
       particleCount(): number
       /** Debug-only: place food at a cell so e2e can drive a deterministic eat. */
       placeFood(x: number, y: number): void
+      /** Debug-only: persist a high score (with its checksum) for e2e. */
+      setHighscore(n: number): void
       soundEnabled(): boolean
       setSoundEnabled(v: boolean): void
       soundReady(): boolean
       soundMuted(): boolean
       soundDuck(): number
+      /** Debug-only perf: drive `n` steady-state render frames (sim frozen). */
+      perfWarm(n: number): number
+      /** Debug-only perf: drive `sample` timed render frames and return stats (ms). */
+      perfRun(sample: number): { p95: number; min: number; max: number; mean: number; count: number }
     }
   }
 }
@@ -273,6 +298,7 @@ window.__snake = {
       foodY: state.foodY,
       headX: state.bodyX[0] ?? 0,
       headY: state.bodyY[0] ?? 0,
+      highScore: state.highScore,
       layout: fb.getLayout(),
     }
   },
@@ -314,6 +340,10 @@ window.__snake = {
     state.foodX = x
     state.foodY = y
   },
+  setHighscore(n: number): void {
+    state.highScore = n
+    hs.save(n)
+  },
   soundEnabled(): boolean {
     return sound.soundEnabled()
   },
@@ -328,5 +358,36 @@ window.__snake = {
   },
   soundDuck(): number {
     return sound.duckGain()
+  },
+  perfWarm(n: number): number {
+    const was = frozen
+    frozen = true
+    for (let i = 0; i < n; i++) renderFrame(16, currentAlpha)
+    frozen = was
+    return n
+  },
+  perfRun(sample: number): { p95: number; min: number; max: number; mean: number; count: number } {
+    const was = frozen
+    frozen = true
+    const buf = new Float32Array(sample)
+    for (let i = 0; i < sample; i++) {
+      const t0 = performance.now()
+      renderFrame(16, currentAlpha)
+      buf[i] = performance.now() - t0
+    }
+    frozen = was
+    const copy = Array.from(buf)
+    copy.sort((a, b) => a - b)
+    const idx = Math.min(sample - 1, Math.ceil(0.95 * sample) - 1)
+    let sum = 0
+    let min = Infinity
+    let max = -Infinity
+    for (let i = 0; i < sample; i++) {
+      const v = buf[i] ?? 0
+      sum += v
+      if (v < min) min = v
+      if (v > max) max = v
+    }
+    return { p95: copy[idx] ?? 0, min, max, mean: sum / sample, count: sample }
   },
 }
