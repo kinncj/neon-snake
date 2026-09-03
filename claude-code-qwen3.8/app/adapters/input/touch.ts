@@ -88,8 +88,8 @@ export function createDpad(push: (i: Intent) => void): Dpad {
   root.id = 'dpad'
   root.style.cssText = [
     'position:fixed',
-    'left:16px',
-    'bottom:16px',
+    'left:calc(var(--bezel) + 16px)',
+    'bottom:calc(var(--bezel) + 16px)',
     'display:none',
     'grid-template-areas:"_ u _" "l _ r" "_ d _"',
     'gap:8px',

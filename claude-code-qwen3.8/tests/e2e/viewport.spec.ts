@@ -26,8 +26,12 @@ test('framebuffer renders the full field and survives a mid-session resize', asy
   await page.waitForTimeout(150)
 
   const vw = await page.evaluate(() => window.innerWidth)
-  const box = (await canvas.boundingBox()) ?? { width: 0, height: 0 }
-  expect(box.width).toBeGreaterThanOrEqual(vw - 2)
+  const box = (await canvas.boundingBox()) ?? { width: 0, height: 0, x: 0 }
+  // The playfield is the glass (#screen), inset by the TV bezel. It fills the
+  // glass — most of the viewport — but is strictly inset from the viewport edge.
+  expect(box.x).toBeGreaterThan(0)
+  expect(box.width).toBeLessThan(vw)
+  expect(box.width).toBeGreaterThanOrEqual(vw * 0.85)
 
   const sn = await page.evaluate(() => window.__snake.get())
   // Head cell renders in the head colour (bright), i.e. the field is drawn.
@@ -51,9 +55,10 @@ test('framebuffer renders the full field and survives a mid-session resize', asy
   })
   expect(after).toEqual(before)
 
-  // Still a full-viewport field after the resize.
+  // Still filling the glass (inset by the bezel) after the resize.
+  const vw2 = await page.evaluate(() => window.innerWidth)
   const box2 = (await canvas.boundingBox()) ?? { width: 0, height: 0 }
-  expect(box2.width).toBeGreaterThanOrEqual(638)
+  expect(box2.width).toBeGreaterThanOrEqual(vw2 * 0.85)
 
   await page.evaluate(() => window.__snake.setFrozen(false))
 })

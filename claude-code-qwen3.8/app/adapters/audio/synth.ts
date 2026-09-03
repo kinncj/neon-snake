@@ -355,8 +355,8 @@ export function createSound(): SoundHandle {
   const unsubscribeLocale = subscribe(syncLabel)
   root.style.cssText = [
     'position:fixed',
-    'top:12px',
-    'right:12px',
+    'top:calc(var(--bezel) + 12px)',
+    'right:calc(var(--bezel) + 12px)',
     'z-index:60',
     'width:40px',
     'height:40px',

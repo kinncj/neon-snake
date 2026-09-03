@@ -42,8 +42,8 @@ export function createHud(): Hud {
   root.id = 'hud'
   root.style.cssText = [
     'position:fixed',
-    'top:10px',
-    'left:10px',
+    'top:calc(var(--bezel) + 10px)',
+    'left:calc(var(--bezel) + 10px)',
     'z-index:30',
     'pointer-events:none',
     'display:flex',

@@ -44,6 +44,13 @@ stage.appendChild(canvas)
 
 const fb = new Framebuffer(canvas)
 const particles = new ParticleSystem()
+// The playfield renders inside the TV bezel: #screen is inset by --bezel, so the
+// canvas is sized to the glass rather than the viewport. Cache the screen's
+// viewport offset so the DOM score popups (position:fixed, viewport-relative)
+// land on the cell, which is now offset into the screen by the bezel.
+const screenEl = document.getElementById('screen')
+let screenOx = 0
+let screenOy = 0
 // The FX engine composites on top of the 2D framebuffer. It is defensive: if
 // WebGL is unavailable (or the context is lost) it stays hidden and the 2D path
 // beneath remains the visible render. `fxActive(tier)` gates it.
@@ -170,7 +177,10 @@ function cellCss(cx: number, cy: number): { x: number; y: number } {
   const dpr = window.devicePixelRatio || 1
   const fx = cx * CELL_PX + CELL_PX / 2
   const fy = cy * CELL_PX + CELL_PX / 2
-  return { x: (lay.offX + fx * lay.scale) / dpr, y: (lay.offY + fy * lay.scale) / dpr }
+  return {
+    x: screenOx + (lay.offX + fx * lay.scale) / dpr,
+    y: screenOy + (lay.offY + fy * lay.scale) / dpr,
+  }
 }
 
 /** Parse a #rrggbb colour to a 0-255 RGB triple (FX particle colouring). */
@@ -231,8 +241,16 @@ function handleEffects(s: SnakeState): void {
 }
 
 function resize(): void {
-  fb.resize(window.innerWidth, window.innerHeight, window.devicePixelRatio || 1)
+  // Size the framebuffer to the glass (#screen), which is inset by the bezel.
+  const w = screenEl?.clientWidth ?? window.innerWidth
+  const h = screenEl?.clientHeight ?? window.innerHeight
+  fb.resize(w, h, window.devicePixelRatio || 1)
   fx.resize(fb.getLayout())
+  if (screenEl) {
+    const r = screenEl.getBoundingClientRect()
+    screenOx = r.left
+    screenOy = r.top
+  }
 }
 
 /**
