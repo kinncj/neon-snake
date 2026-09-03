@@ -1,5 +1,6 @@
-# Builds all three snake packages and deploys the composed site (landing page +
-# opencode/ + pi-agent/ + claude-code-fable/) to GitHub Pages.
+# Builds all four snake packages and deploys the composed site (landing page +
+# the claude-code-fable baseline + opencode/ + pi-agent/ + claude-code-qwen3.8/)
+# to GitHub Pages.
 #
 # Pages source must be set to "GitHub Actions" (Settings → Pages →
 # Build and deployment → Source). The gh-pages branch is managed by this
@@ -7,9 +8,10 @@
 #
 # Site layout when live:
 #   https://kinncj.github.io/neon-snake/           (site/index.html)
+#   https://kinncj.github.io/neon-snake/claude-code-fable/    (claude-code-fable/dist)  <- baseline
 #   https://kinncj.github.io/neon-snake/opencode/  (opencode/dist)
 #   https://kinncj.github.io/neon-snake/pi-agent/  (pi-agent/dist)
-#   https://kinncj.github.io/neon-snake/claude-code-fable/  (claude-code-fable/dist)
+#   https://kinncj.github.io/neon-snake/claude-code-qwen3.8/  (claude-code-qwen3.8/dist)
 
 name: Deploy to GitHub Pages
 
@@ -37,32 +39,39 @@ jobs:
         with:
           node-version: 22
 
+      - name: Build claude-code-fable
+        working-directory: claude-code-fable
+        run: |
+          npm ci
+          SNAKE_BUILD="pages-${{ github.sha }}" NODE_ENV=production npm run build
+
       - name: Build opencode
         working-directory: opencode
         run: |
           npm ci
-          SNAKE_BUILD="pages-${GITHUB_SHA}" npm run build
+          SNAKE_BUILD="pages-${{ github.sha }}" npm run build
 
       - name: Build pi-agent
         working-directory: pi-agent
         run: |
           npm ci
-          SNAKE_BUILD="pages-${GITHUB_SHA}" npm run build
+          SNAKE_BUILD="pages-${{ github.sha }}" npm run build
 
-      - name: Build claude-code-fable
-        working-directory: claude-code-fable
+      - name: Build claude-code-qwen3.8
+        working-directory: claude-code-qwen3.8
         run: |
           npm ci
-          SNAKE_BUILD="pages-${GITHUB_SHA}" NODE_ENV=production npm run build
+          SNAKE_BUILD="pages-${{ github.sha }}" npm run build
 
       # All builds use a relative base (vite.config.ts), so the dist/
       # folders run unchanged from any sub-path of the site.
       - name: Assemble site
         run: |
-          mkdir -p site-build/opencode site-build/pi-agent site-build/claude-code-fable
+          mkdir -p site-build/opencode site-build/pi-agent site-build/claude-code-qwen3.8 site-build/claude-code-fable
           cp site/index.html site-build/
           cp -r opencode/dist/. site-build/opencode/
           cp -r pi-agent/dist/. site-build/pi-agent/
+          cp -r claude-code-qwen3.8/dist/. site-build/claude-code-qwen3.8/
           cp -r claude-code-fable/dist/. site-build/claude-code-fable/
 
       - uses: actions/upload-pages-artifact@v3
